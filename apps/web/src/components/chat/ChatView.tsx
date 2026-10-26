@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ThreadId, TurnItem } from "@pi-web/protocol";
 import { useAppStore } from "@pi-web/client-runtime";
+import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
 import { ProjectIcon } from "../ProjectMonogram";
 import { useSidebarVisibility } from "../ui/sidebar";
@@ -21,6 +22,7 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
   const items = threadState?.items ?? [];
   const projectName = summary ? basename(summary.cwd) : "…";
   const isHeroState = items.length === 0;
+  const { tr } = useI18n();
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
@@ -35,7 +37,7 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
         <span className="text-muted-foreground text-xs">{projectName}</span>
         <span className="text-muted-foreground text-xs">/</span>
         <span className="truncate text-xs font-medium">
-          {summary?.title ?? "New thread"}
+          {summary?.title ?? tr("新线程", "New thread")}
         </span>
       </header>
       {isHeroState ? (
@@ -62,6 +64,7 @@ function HeroState({
   projectName: string;
   running: boolean;
 }) {
+  const { tr } = useI18n();
   return (
     <div className="relative flex-1">
       <div className="absolute inset-0 flex items-center">
@@ -77,7 +80,7 @@ function HeroState({
             <Composer threadId={threadId} running={running} autoFocus />
           </div>
           <div className="text-muted-foreground mt-2 text-center text-xs">
-            Enter 发送 · Shift+Enter 换行
+            {tr("Enter 发送 · Shift+Enter 换行", "Enter to send · Shift+Enter for newline")}
           </div>
         </div>
       </div>
@@ -93,6 +96,7 @@ function basename(path: string): string {
 function MessageTimeline({ items, running }: { items: TurnItem[]; running: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
+  const { tr } = useI18n();
 
   const lastItem = items.at(-1);
   const lastSignature = useMemo(
@@ -130,10 +134,14 @@ function MessageTimeline({ items, running }: { items: TurnItem[]; running: boole
           <TurnItemRow key={item.id} item={item} />
         ))}
         {running && !pendingApproval && items.at(-1)?.type !== "assistant_message" && (
-          <div className="text-muted-foreground animate-pulse py-2 text-xs">pi is working…</div>
+          <div className="text-muted-foreground animate-pulse py-2 text-xs">
+            {tr("Pi 正在思考与执行…", "pi is working…")}
+          </div>
         )}
         {pendingApproval && pendingApproval.type === "approval_request" && (
-          <div className="text-warning mt-2 text-2xs">等待你确认后 pi 才会继续。</div>
+          <div className="text-warning mt-2 text-2xs">
+            {tr("等待你确认后 Pi 才会继续。", "Waiting for your approval before Pi continues.")}
+          </div>
         )}
       </div>
     </div>

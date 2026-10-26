@@ -12,6 +12,7 @@ import {
 import type { ServerConfigResponse } from "@pi-web/protocol";
 import { transport, useAppStore, type SidebarUtilityPage } from "@pi-web/client-runtime";
 import { getLocalStorageItem, removeLocalStorageItem } from "./hooks/useLocalStorage";
+import { useI18n } from "./i18n";
 import { cn, isMacPlatform } from "./lib/utils";
 import { SidebarBrandWidthProbe } from "./components/sidebar/SidebarChrome";
 import { ThreadSidebar } from "./components/ThreadSidebar";
@@ -65,6 +66,7 @@ function SidebarControl() {
   const { toggleSidebar, isMobile, mobileSheetMounted } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
   const shortcutLabel = isMacPlatform(navigator.platform) ? "⌘B" : "Ctrl+B";
+  const { tr } = useI18n();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -132,11 +134,13 @@ function SidebarControl() {
                 "pointer-events-auto",
                 isSidebarVisible && "relative top-auto translate-y-0",
               )}
-              aria-label="Toggle main sidebar"
+              aria-label={tr("切换主侧边栏", "Toggle main sidebar")}
             />
           }
         />
-        <TooltipPopup side="bottom">Toggle main sidebar ({shortcutLabel})</TooltipPopup>
+        <TooltipPopup side="bottom">
+          {tr(`切换主侧边栏 (${shortcutLabel})`, `Toggle main sidebar (${shortcutLabel})`)}
+        </TooltipPopup>
       </Tooltip>
     </div>
   );
@@ -147,6 +151,7 @@ export function App() {
   const setActiveThread = useAppStore((state) => state.setActiveThread);
   const activeUtilityPage = useAppStore((state) => state.activeUtilityPage);
   const threads = useAppStore((state) => state.threads);
+  const threadsLoaded = useAppStore((state) => state.threadsLoaded);
   const connection = useAppStore((state) => state.connection);
   const defaultCwd = useAppStore((state) => state.defaultCwd);
 
@@ -176,20 +181,25 @@ export function App() {
 
   const hasThreads = threads.length > 0;
   useEffect(() => {
-    if (defaultCwd !== null && !hasThreads && !autoCreateStarted.current) {
+    // 必须等待 WebSocket 首帧 threads 列表返回确认真的没有任何历史线程时，才自动创建初始线程
+    if (threadsLoaded && defaultCwd !== null && !hasThreads && !autoCreateStarted.current) {
       autoCreateStarted.current = true;
+      useAppStore.getState().markNewThreadRequested();
       transport.dispatch({ type: "thread.create", cwd: defaultCwd });
     }
-  }, [defaultCwd, hasThreads]);
+  }, [threadsLoaded, defaultCwd, hasThreads]);
 
   useEffect(() => {
-    if (activeThreadId === null && threads.length > 0) {
+    if (!threadsLoaded || threads.length === 0) return;
+    const currentExists =
+      activeThreadId !== null && threads.some((t) => t.id === activeThreadId);
+    if (!currentExists) {
       const firstActive = threads.find((t) => !t.settledAt && !t.snoozedUntil) ?? threads[0];
       if (firstActive) {
         setActiveThread(firstActive.id);
       }
     }
-  }, [activeThreadId, threads, setActiveThread]);
+  }, [activeThreadId, threads, threadsLoaded, setActiveThread]);
 
   useEffect(() => {
     if (activeThreadId === null) return;
@@ -250,6 +260,7 @@ function UtilityPageView({ page }: { page: SidebarUtilityPage }) {
   const setActiveUtilityPage = useAppStore((state) => state.setActiveUtilityPage);
   const projects = useAppStore((state) => state.projects);
   const threads = useAppStore((state) => state.threads);
+  const { tr } = useI18n();
 
   if (page === "settings") {
     return <SettingsView />;
@@ -257,11 +268,11 @@ function UtilityPageView({ page }: { page: SidebarUtilityPage }) {
 
   const meta = {
     "pull-requests": {
-      title: "Pull Requests",
+      title: tr("拉取请求 (Pull Requests)", "Pull Requests"),
       icon: <GitPullRequestArrowIcon className="size-4" />,
     },
     usage: {
-      title: "Usage",
+      title: tr("用量统计 (Usage)", "Usage"),
       icon: <ChartNoAxesColumnIcon className="size-4" />,
     },
   }[page];
@@ -281,39 +292,48 @@ function UtilityPageView({ page }: { page: SidebarUtilityPage }) {
         </div>
         <Button size="xs" variant="ghost" onClick={() => setActiveUtilityPage(null)}>
           <ArrowLeftIcon className="size-3.5" />
-          <span>Back to chat</span>
+          <span>{tr("返回对话", "Back to chat")}</span>
         </Button>
       </header>
 
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 overflow-y-auto p-6">
         {page === "pull-requests" && (
           <div className="rounded-xl border bg-card p-5 text-card-foreground shadow-xs">
-            <h2 className="text-sm font-semibold">Pull Requests</h2>
+            <h2 className="text-sm font-semibold">{tr("拉取请求", "Pull Requests")}</h2>
             <p className="mt-2 text-xs text-muted-foreground">
-              No pull requests linked to active Pi threads yet.
+              {tr(
+                "当前暂无关联至活跃 Pi 线程的 Pull Request。",
+                "No pull requests linked to active Pi threads yet.",
+              )}
             </p>
           </div>
         )}
 
         {page === "usage" && (
           <div className="rounded-xl border bg-card p-5 text-card-foreground shadow-xs">
-            <h2 className="text-sm font-semibold">Workspace Usage</h2>
+            <h2 className="text-sm font-semibold">{tr("工作区用量统计", "Workspace Usage")}</h2>
             <div className="mt-3 grid grid-cols-3 gap-3 text-center">
               <div className="rounded-lg border p-3">
                 <div className="font-mono text-lg font-semibold">
                   {threads.filter((t) => !t.settledAt && !t.snoozedUntil).length}
                 </div>
-                <div className="text-2xs text-muted-foreground">Active threads</div>
+                <div className="text-2xs text-muted-foreground">
+                  {tr("活跃线程", "Active threads")}
+                </div>
               </div>
               <div className="rounded-lg border p-3">
                 <div className="font-mono text-lg font-semibold">
                   {threads.filter((t) => t.settledAt != null).length}
                 </div>
-                <div className="text-2xs text-muted-foreground">Settled</div>
+                <div className="text-2xs text-muted-foreground">
+                  {tr("已结项", "Settled")}
+                </div>
               </div>
               <div className="rounded-lg border p-3">
                 <div className="font-mono text-lg font-semibold">{projects.length}</div>
-                <div className="text-2xs text-muted-foreground">Projects</div>
+                <div className="text-2xs text-muted-foreground">
+                  {tr("项目数", "Projects")}
+                </div>
               </div>
             </div>
           </div>
@@ -325,19 +345,29 @@ function UtilityPageView({ page }: { page: SidebarUtilityPage }) {
 
 function EmptyWelcome({ connection }: { connection: string }) {
   const piStatus = useAppStore((state) => state.piStatus);
+  const { tr } = useI18n();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
       <h1 className="text-2xl font-semibold">FR Code</h1>
       <p className="text-muted-foreground max-w-md text-sm">
-        FR Code · 单 pi agent 的控制台。点击左侧顶栏新建一个线程开始对话。
+        {tr(
+          "FR Code · 专为 Pi Agent 打造的工作台。点击左侧顶栏新建一个线程开始对话。",
+          "FR Code · Dedicated Pi coding agent console. Click the header button in the sidebar to start a new thread.",
+        )}
       </p>
       {piStatus && !piStatus.installed && (
         <p className="text-error max-w-md text-sm">
-          未检测到 pi CLI（`pi --version` 失败）。请先安装
-          @earendil-works/pi-coding-agent 并完成登录。
+          {tr(
+            "未检测到 pi CLI（`pi --version` 失败）。请先安装 @earendil-works/pi-coding-agent 并完成登录。",
+            "Pi CLI not detected (`pi --version` failed). Please install @earendil-works/pi-coding-agent and sign in first.",
+          )}
         </p>
       )}
-      {connection === "offline" && <p className="text-error text-sm">连接已断开，正在重连…</p>}
+      {connection === "offline" && (
+        <p className="text-error text-sm">
+          {tr("连接已断开，正在重连…", "Disconnected — reconnecting…")}
+        </p>
+      )}
     </div>
   );
 }

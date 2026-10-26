@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { PiThinkingLevel, ThreadId } from "@pi-web/protocol";
 import { transport, useAppStore } from "@pi-web/client-runtime";
+import { useI18n } from "~/i18n";
 import { ComposerSurface } from "./ComposerSurface";
 import { PiModelPicker, PiThinkingPicker } from "./PiModelPicker";
 
@@ -35,6 +36,7 @@ export function Composer({
   const setSelectedModel = useAppStore((s) => s.setSelectedModel);
   const patchThreadSummary = useAppStore((s) => s.patchThreadSummary);
   const threadSummary = useAppStore((s) => s.threads.find((t) => t.id === threadId));
+  const { tr } = useI18n();
 
   const models = useMemo(() => piStatus?.models ?? [], [piStatus?.models]);
   const effectiveModelSlug =
@@ -97,17 +99,22 @@ export function Composer({
     });
   };
 
+  const placeholderText = tr(
+    "提出代码修改、继续追问，或附加图片",
+    "Ask for changes, send follow-ups, or attach images",
+  );
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false, codeBlock: false }),
-      Placeholder.configure({ placeholder: "Ask for changes, send follow-ups, or attach images" }),
+      Placeholder.configure({ placeholder: placeholderText }),
     ],
     editorProps: {
       attributes: {
         class:
           "composer-tiptap-content min-h-14 max-h-64 overflow-y-auto px-3.5 py-3 text-sm outline-none",
         // Placeholder 扩展给空段落加 .is-editor-empty；文案经 CSS 变量传入
-        style: "--composer-placeholder: 'Ask for changes, send follow-ups, or attach images'",
+        style: `--composer-placeholder: '${placeholderText}'`,
         role: "textbox",
         "aria-multiline": "true",
       },
@@ -121,6 +128,21 @@ export function Composer({
       },
     },
   });
+
+  useEffect(() => {
+    editor?.setOptions({
+      editorProps: {
+        ...editor.options.editorProps,
+        attributes: {
+          class:
+            "composer-tiptap-content min-h-14 max-h-64 overflow-y-auto px-3.5 py-3 text-sm outline-none",
+          style: `--composer-placeholder: '${placeholderText}'`,
+          role: "textbox",
+          "aria-multiline": "true",
+        },
+      },
+    });
+  }, [editor, placeholderText]);
 
   useEffect(() => {
     const style = document.createElement("style");
@@ -187,13 +209,16 @@ export function Composer({
               ) : null}
               <ChipSeparator />
               {/* 权限模式 chip：pi 默认 full access，静态展示 */}
-              <ComposerChip icon={<LockIcon className="size-3.5" />} label="Full access" />
+              <ComposerChip
+                icon={<LockIcon className="size-3.5" />}
+                label={tr("完全访问", "Full access")}
+              />
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
                 disabled
-                title="附件（待实现）"
+                title={tr("附件（待实现）", "Attachments (coming soon)")}
                 className="text-muted-foreground hover:bg-sidebar-row-hover flex size-7 items-center justify-center rounded-md opacity-50"
               >
                 <PaperclipIcon className="size-4" />
@@ -202,7 +227,7 @@ export function Composer({
                 <button
                   type="button"
                   onClick={() => transport.dispatch({ type: "thread.stop", threadId })}
-                  title="停止"
+                  title={tr("停止", "Stop")}
                   className="bg-message-action text-message-action-foreground flex size-7 items-center justify-center rounded-full"
                 >
                   <SquareIcon className="size-3 fill-current" />
@@ -211,7 +236,7 @@ export function Composer({
                 <button
                   type="button"
                   onClick={submit}
-                  title="发送"
+                  title={tr("发送", "Send")}
                   disabled={!hasText}
                   className="bg-message-action text-message-action-foreground hover:bg-message-action-hover flex size-7 items-center justify-center rounded-full disabled:opacity-40"
                 >

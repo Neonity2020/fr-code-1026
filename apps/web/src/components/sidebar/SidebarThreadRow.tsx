@@ -19,6 +19,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { ThreadSummary } from "@pi-web/protocol";
+import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
 import { projectBasename } from "../../projectIdentity";
 import { PiGlyph } from "../chat/PiModelPicker";
@@ -72,6 +73,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
   const [draftTitle, setDraftTitle] = useState(thread.title);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const renameCommittedRef = useRef(false);
+  const { tr } = useI18n();
 
   const isPinned = Boolean(thread.pinnedAt);
   const isSnoozed = typeof thread.snoozedUntil === "number" && thread.snoozedUntil > Date.now();
@@ -173,7 +175,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
           <button
             type="button"
             data-row-action
-            aria-label="Unpin thread"
+            aria-label={tr("取消置顶", "Unpin thread")}
             onClick={(event) => {
               event.stopPropagation();
               callbacks.onPinToggle(thread, false);
@@ -191,7 +193,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
           className="hidden size-3 shrink-0 group-hover/unpin:block group-focus-visible/unpin:block"
         />
       </TooltipTrigger>
-      <TooltipPopup side="top">Unpin thread</TooltipPopup>
+      <TooltipPopup side="top">{tr("取消置顶", "Unpin thread")}</TooltipPopup>
     </Tooltip>
   ) : null;
 
@@ -363,18 +365,18 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
                 {thread.status === "running" ? (
                   <span className="inline-flex items-center gap-1 font-medium text-sky-500">
                     <CircleDashedIcon aria-hidden className="size-4 shrink-0 animate-spin" />
-                    <span>Working</span>
+                    <span>{tr("运行中", "Working")}</span>
                     <WorkingDurationLabel startedMs={thread.updatedAt} />
                   </span>
                 ) : thread.status === "waiting" ? (
                   <span className="inline-flex items-center gap-1 font-medium text-amber-500">
                     <ShieldQuestionIcon aria-hidden className="size-4 shrink-0" />
-                    <span>Approval</span>
+                    <span>{tr("待审批", "Approval")}</span>
                   </span>
                 ) : thread.status === "error" ? (
                   <span className="inline-flex items-center gap-1 font-medium text-destructive">
                     <CircleAlertIcon aria-hidden className="size-4 shrink-0" />
-                    <span>Failed</span>
+                    <span>{tr("失败", "Failed")}</span>
                   </span>
                 ) : isWoke ? (
                   <Tooltip>
@@ -383,7 +385,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
                         <button
                           type="button"
                           data-row-action
-                          aria-label="Dismiss Woke notification"
+                          aria-label={tr("关闭唤醒提醒", "Dismiss Woke notification")}
                           onClick={(event) => {
                             event.stopPropagation();
                             callbacks.onAcknowledgeWoke(thread);
@@ -391,11 +393,13 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
                           className="inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium text-amber-400 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         >
                           <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
-                          <span role="status">Woke</span>
+                          <span role="status">{tr("已唤醒", "Woke")}</span>
                         </button>
                       }
                     />
-                    <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
+                    <TooltipPopup side="top">
+                      {tr("关闭唤醒提醒", "Dismiss Woke notification")}
+                    </TooltipPopup>
                   </Tooltip>
                 ) : (
                   <span>{formatCompactRelativeTime(thread.updatedAt)}</span>
@@ -418,7 +422,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
                           render={
                             <button
                               type="button"
-                              aria-label="Snooze thread"
+                              aria-label={tr("延后提醒", "Snooze thread")}
                               onClick={(event) => event.stopPropagation()}
                               className="inline-flex cursor-pointer items-center rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
                             />
@@ -428,11 +432,11 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
                         </MenuTrigger>
                       }
                     />
-                    <TooltipPopup side="top">Snooze thread</TooltipPopup>
+                    <TooltipPopup side="top">{tr("延后提醒", "Snooze thread")}</TooltipPopup>
                   </Tooltip>
                   <MenuPopup align="end" sideOffset={4} className="w-56">
                     <div className="px-2 py-1 text-2xs font-medium text-muted-foreground">
-                      Snooze until
+                      {tr("延后至", "Snooze until")}
                     </div>
                     {resolveSnoozePresets().map((preset) => (
                       <MenuItem
@@ -459,7 +463,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
                           }}
                         >
                           <AlarmClockOffIcon className="size-3.5" />
-                          <span>Wake now</span>
+                          <span>{tr("立即唤醒", "Wake now")}</span>
                         </MenuItem>
                       </>
                     ) : null}
@@ -471,7 +475,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
                     render={
                       <button
                         type="button"
-                        aria-label="Settle thread"
+                        aria-label={tr("结项线程", "Settle thread")}
                         onClick={(event) => {
                           event.stopPropagation();
                           callbacks.onSettleToggle(thread, true);
@@ -481,9 +485,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({
                     }
                   >
                     <CheckIcon className="size-3.5" />
-                    Settle
+                    {tr("结项", "Settle")}
                   </TooltipTrigger>
-                  <TooltipPopup side="top">Settle thread</TooltipPopup>
+                  <TooltipPopup side="top">{tr("结项线程", "Settle thread")}</TooltipPopup>
                 </Tooltip>
               </span>
             </span>

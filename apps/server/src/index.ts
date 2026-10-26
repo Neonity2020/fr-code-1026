@@ -9,8 +9,11 @@
  * v1 无鉴权（本机使用）。协议语义（快照→事件→synchronized、afterSequence、
  * commandId 幂等）与 t3code 的 orchestration-v2 对齐。
  */
+import { execFile } from "node:child_process";
 import * as fs from "node:fs";
+import * as fsp from "node:fs/promises";
 import * as http from "node:http";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -24,6 +27,170 @@ const repoDir = path.resolve(serverDir, "../../..");
 const dataDir = process.env.PI_WEB_DATA_DIR ?? path.join(repoDir, ".data");
 const webDist = path.resolve(repoDir, "apps/web/dist");
 const defaultCwd = process.env.PI_WEB_DEFAULT_CWD ?? process.cwd();
+const homeDir = os.homedir();
+
+function expandHomePath(inputPath: string): string {
+  const trimmed = inputPath.trim();
+  if (trimmed === "~") return homeDir;
+  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    return path.join(homeDir, trimmed.slice(2));
+  }
+  return trimmed;
+}
+
+function resolveHostProjectPath(rawPath: string, baseCwd: string = defaultCwd): string {
+  const expanded = expandHomePath(rawPath);
+  if (expanded.length === 0) return baseCwd;
+  return path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(baseCwd, expanded);
+}
+
+interface BrowseDirectoryEntry {
+  name: string;
+  fullPath: string;
+  isGitRepo: boolean;
+}
+
+async function browseHostDirectories(partialPathRaw: string, baseCwd: string = defaultCwd) {
+  const trimmed = partialPathRaw.trim();
+  const effectiveRaw = trimmed.length === 0 ? `${ baseCwd.replace(/\/+$/, "") }/` : trimmed;
+  const resolvedInputPath = resolveHostProjectPath(effectiveRaw, baseCwd);
+  const endsWithSeparator = /[\\/]$/.test(effectiveRaw) || effectiveRaw === "~";
+  const parentPath = endsWithSeparator ? resolvedInputPath : path.dirname(resolvedInputPath);
+  const prefix = endsWithSeparator ? "" : path.basename(resolvedInputPath);
+
+  let exists = false;
+  try {
+    const stat = await fsp.stat(resolvedInputPath);
+    exists = stat.isDirectory();
+  } catch {
+    exists = false;
+  }
+
+  let dirents: fs.Dirent[] = [];
+  let accessError: string | null = null;
+  try {
+    dirents = await fsp.readdir(parentPath, { withFileTypes: true });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code && code !== "ENOENT" && code !== "ENOTDIR") {
+      accessError = (error as Error).message;
+    }
+  }
+
+  const showHidden = prefix.startsWith(".");
+  const lowerPrefix = prefix.toLowerCase();
+  const entries: BrowseDirectoryEntry[] = [];
+
+  for (const dirent of dirents) {
+    if (!dirent.name.toLowerCase().startsWith(lowerPrefix)) continue;
+    if (!showHidden && dirent.name.startsWith(".")) continue;
+    const fullPath = path.join(parentPath, dirent.name);
+    let isDirectory = dirent.isDirectory();
+    if (!isDirectory && dirent.isSymbolicLink()) {
+      try {
+        isDirectory = (await fsp.stat(fullPath)).isDirectory();
+      } catch {
+        isDirectory = false;
+      }
+    }
+    if (!isDirectory) continue;
+    let isGitRepo = false;
+    try {
+      await fsp.lstat(path.join(fullPath, ".git"));
+      isGitRepo = true;
+    } catch {
+      isGitRepo = false;
+    }
+    entries.push({ name: dirent.name, fullPath, isGitRepo });
+  }
+
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+  const upCandidate = path.dirname(parentPath);
+  const canBrowseUp = upCandidate !== parentPath;
+
+  return {
+    parentPath,
+    resolvedPath: resolvedInputPath,
+    exists,
+    canBrowseUp,
+    upPath: canBrowseUp ? upCandidate : null,
+    homeDir,
+    accessError,
+    entries,
+  };
+}
+
+function pickFolderFromNativeDialog(options: {
+  initialPath?: string;
+  prompt?: string;
+}): Promise<{ cancelled: boolean; path: string | null; error?: string }> {
+  const promptText = (options.prompt ?? "Select project folder").replace(/["\\]/g, "\\$&");
+  let validInitialDir: string | null = null;
+  if (options.initialPath && options.initialPath.trim().length > 0) {
+    const candidate = resolveHostProjectPath(options.initialPath);
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+        validInitialDir = candidate;
+      } else {
+        const parent = path.dirname(candidate);
+        if (fs.existsSync(parent) && fs.statSync(parent).isDirectory()) {
+          validInitialDir = parent;
+        }
+      }
+    } catch {
+      validInitialDir = null;
+    }
+  }
+
+  if (process.platform === "darwin") {
+    const escapedDir = validInitialDir ? validInitialDir.replace(/["\\]/g, "\\$&") : null;
+    const script = escapedDir
+      ? `POSIX path of (choose folder with prompt "${promptText}" default location (POSIX file "${escapedDir}"))`
+      : `POSIX path of (choose folder with prompt "${promptText}")`;
+    return new Promise((resolve) => {
+      execFile("osascript", ["-e", script], (error, stdout) => {
+        if (error) {
+          resolve({ cancelled: true, path: null });
+          return;
+        }
+        const raw = stdout.trim();
+        if (!raw) {
+          resolve({ cancelled: true, path: null });
+          return;
+        }
+        const normalized = raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
+        resolve({ cancelled: false, path: normalized });
+      });
+    });
+  }
+
+  if (process.platform === "linux") {
+    const args = ["--file-selection", "--directory", `--title=${options.prompt ?? "Select project folder"}`];
+    if (validInitialDir) {
+      args.push(`--filename=${validInitialDir}/`);
+    }
+    return new Promise((resolve) => {
+      execFile("zenity", args, (error, stdout) => {
+        if (error) {
+          resolve({ cancelled: true, path: null });
+          return;
+        }
+        const raw = stdout.trim();
+        if (!raw) {
+          resolve({ cancelled: true, path: null });
+          return;
+        }
+        resolve({ cancelled: false, path: raw.length > 1 ? raw.replace(/\/+$/, "") : raw });
+      });
+    });
+  }
+
+  return Promise.resolve({
+    cancelled: true,
+    path: null,
+    error: "Native folder picker is not supported on this platform.",
+  });
+}
 
 const store = new ThreadStore(dataDir, defaultCwd);
 const runners = new Map<string, PiThreadRunner>();
@@ -62,13 +229,52 @@ const server = http.createServer((request, response) => {
   if (url.pathname === "/api/config") {
     void checkPiStatus().then((pi) => {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ defaultCwd, projects: store.listProjects(), pi }));
+      response.end(JSON.stringify({ defaultCwd, homeDir, projects: store.listProjects(), pi }));
     });
     return;
   }
   if (url.pathname === "/api/threads") {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ threads: store.listThreads(), projects: store.listProjects() }));
+    return;
+  }
+  if (url.pathname === "/api/fs/browse" && request.method === "GET") {
+    const partialPath = url.searchParams.get("path") ?? "";
+    const baseCwd = url.searchParams.get("cwd") ?? defaultCwd;
+    void browseHostDirectories(partialPath, baseCwd)
+      .then((result) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(result));
+      })
+      .catch((error: unknown) => {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      });
+    return;
+  }
+  if (url.pathname === "/api/fs/pick-folder" && request.method === "POST") {
+    let rawBody = "";
+    request.on("data", (chunk) => {
+      rawBody += String(chunk);
+    });
+    request.on("end", () => {
+      let options: { initialPath?: string; prompt?: string } = {};
+      if (rawBody.trim().length > 0) {
+        try {
+          options = JSON.parse(rawBody) as { initialPath?: string; prompt?: string };
+        } catch {
+          options = {};
+        }
+      }
+      void pickFolderFromNativeDialog(options).then((result) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(result));
+      });
+    });
     return;
   }
 
@@ -154,7 +360,13 @@ wss.on("connection", (socket) => {
         try {
           switch (command.type) {
             case "thread.create": {
-              store.createThread(command.cwd, command.title, {
+              const normalizedCwd = resolveHostProjectPath(command.cwd);
+              try {
+                fs.mkdirSync(normalizedCwd, { recursive: true });
+              } catch {
+                // ignore if read-only
+              }
+              store.createThread(normalizedCwd, command.title, {
                 model: command.model,
                 thinkingLevel: command.thinkingLevel,
               });
@@ -251,12 +463,19 @@ wss.on("connection", (socket) => {
               return;
             }
             case "project.add": {
-              store.addProject(command.cwd);
+              const normalizedCwd = resolveHostProjectPath(command.cwd);
+              try {
+                fs.mkdirSync(normalizedCwd, { recursive: true });
+              } catch {
+                // ignore if read-only
+              }
+              store.addProject(normalizedCwd);
               send(socket, { kind: "ack", commandId });
               return;
             }
             case "project.remove": {
-              store.removeProject(command.cwd);
+              const normalizedCwd = resolveHostProjectPath(command.cwd);
+              store.removeProject(normalizedCwd);
               send(socket, { kind: "ack", commandId });
               return;
             }

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { TurnItem } from "@pi-web/protocol";
 import { transport, useAppStore } from "@pi-web/client-runtime";
+import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
 import { ChatMarkdown } from "./ChatMarkdown";
 
@@ -111,6 +112,7 @@ function AssistantMessageRow({ text, streaming }: { text: string; streaming: boo
 
 function ReasoningRow({ text, streaming }: { text: string; streaming: boolean }) {
   const [open, setOpen] = useState(false);
+  const { tr } = useI18n();
   if (text.trim().length === 0) return null;
   return (
     <div className="text-muted-foreground py-0.5">
@@ -120,7 +122,7 @@ function ReasoningRow({ text, streaming }: { text: string; streaming: boolean })
         className="hover:text-foreground flex items-center gap-1 text-2xs"
       >
         {open ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
-        {streaming ? "思考中…" : "思考过程"}
+        {streaming ? tr("思考中…", "Thinking…") : tr("思考过程", "Thought process")}
       </button>
       {open && <div className="mt-1 border-l border-border pl-3 text-xs whitespace-pre-wrap">{text}</div>}
     </div>
@@ -205,13 +207,17 @@ function ApprovalRow({
   message?: string;
   status: TurnItem["status"];
 }) {
+  const { tr } = useI18n();
   const respond = (decision: "accept" | "decline") => {
     transport.dispatch({ type: "approval.respond", requestId, decision, threadId: useAppStore.getState().activeThreadId ?? "" });
   };
   if (status !== "waiting") {
     return (
       <div className="text-muted-foreground flex items-center gap-1.5 px-1 py-0.5 text-2xs">
-        {status === "completed" ? "已允许" : "已拒绝/取消"}：{title}
+        {status === "completed"
+          ? tr("已允许", "Approved")
+          : tr("已拒绝/取消", "Declined / Cancelled")}
+        ：{title}
       </div>
     );
   }
@@ -225,14 +231,14 @@ function ApprovalRow({
           onClick={() => respond("accept")}
           className="bg-primary text-primary-foreground hover:bg-message-action-hover rounded-md px-3 py-1 text-xs font-medium"
         >
-          允许
+          {tr("允许", "Approve")}
         </button>
         <button
           type="button"
           onClick={() => respond("decline")}
           className="hover:bg-sidebar-row-hover rounded-md border border-border px-3 py-1 text-xs"
         >
-          拒绝
+          {tr("拒绝", "Decline")}
         </button>
       </div>
     </div>

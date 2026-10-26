@@ -16,6 +16,7 @@ import {
 export type ThreadLiveStatus = "empty" | "loading" | "live";
 export type ConnectionStatus = "connecting" | "online" | "offline";
 export type SidebarUtilityPage = "settings" | "pull-requests" | "usage";
+export type AppLocale = "zh-CN" | "en";
 export type SettingsSectionId =
   | "general"
   | "appearance"
@@ -28,6 +29,51 @@ export type SettingsSectionId =
   | "storage"
   | "connections"
   | "archived";
+
+const LOCALE_STORAGE_KEY = "fr-code:locale";
+const ACTIVE_THREAD_STORAGE_KEY = "fr-code:active-thread-id";
+
+function readInitialLocale(): AppLocale {
+  try {
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+      if (saved === "zh-CN" || saved === "en") {
+        document.documentElement.lang = saved;
+        return saved;
+      }
+      document.documentElement.lang = "zh-CN";
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return "zh-CN";
+}
+
+function readInitialActiveThreadId(): ThreadId | null {
+  try {
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem(ACTIVE_THREAD_STORAGE_KEY);
+      return saved && saved.trim().length > 0 ? saved : null;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return null;
+}
+
+function writeActiveThreadId(threadId: ThreadId | null): void {
+  try {
+    if (typeof window !== "undefined") {
+      if (threadId) {
+        window.localStorage.setItem(ACTIVE_THREAD_STORAGE_KEY, threadId);
+      } else {
+        window.localStorage.removeItem(ACTIVE_THREAD_STORAGE_KEY);
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export interface ThreadUndoNotice {
   kind: "settled" | "snoozed";
@@ -44,6 +90,8 @@ export interface ThreadState {
 
 export interface AppStore {
   threads: ThreadSummary[];
+  /** 服务端首帧 threads 列表是否已到达（防止刷新时因空数组竞态误触发自动新建线程） */
+  threadsLoaded: boolean;
   projects: string[];
   selectedProjectCwd: string | null;
   activeThreadId: ThreadId | null;
@@ -56,10 +104,12 @@ export interface AppStore {
   piStatus: PiStatus | null;
   selectedModel: string | null;
   selectedThinkingLevel: PiThinkingLevel | null;
+  locale: AppLocale;
   /** 「新建线程」意图：下一个 thread.created 事件到达时自动选中 */
   newThreadRequested: boolean;
 
   setConnection(connection: ConnectionStatus): void;
+  setLocale(locale: AppLocale): void;
   setThreads(threads: ThreadSummary[]): void;
   setProjects(projects: string[]): void;
   setSelectedProjectCwd(cwd: string | null): void;
@@ -84,9 +134,10 @@ export interface AppStore {
 
 export const useAppStore = create<AppStore>((set, get) => ({
   threads: [],
+  threadsLoaded: false,
   projects: [],
   selectedProjectCwd: null,
-  activeThreadId: null,
+  activeThreadId: readInitialActiveThreadId(),
   activeUtilityPage: null,
   activeSettingsSection: "general",
   undoNotice: null,
@@ -96,10 +147,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
   piStatus: null,
   selectedModel: null,
   selectedThinkingLevel: null,
+  locale: readInitialLocale(),
   newThreadRequested: false,
 
   setConnection: (connection) => set({ connection }),
-  setThreads: (threads) => set({ threads }),
+  setLocale: (locale) => {
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+        document.documentElement.lang = locale;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    set({ locale });
+  },
+  setThreads: (threads) => set({ threads, threadsLoaded: true }),
   setProjects: (projects) => set({ projects }),
   setSelectedProjectCwd: (selectedProjectCwd) => set({ selectedProjectCwd }),
   setActiveUtilityPage: (activeUtilityPage) => set({ activeUtilityPage }),
@@ -135,7 +198,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedThinkingLevel:
         thinkingLevel !== undefined ? thinkingLevel : state.selectedThinkingLevel,
     })),
-  setActiveThread: (threadId) => set({ activeThreadId: threadId, activeUtilityPage: null }),
+  setActiveThread: (threadId) => {
+    writeActiveThreadId(threadId);
+    set({ activeThreadId: threadId, activeUtilityPage: null });
+  },
   markNewThreadRequested: () => set({ newThreadRequested: true }),
   setThreadStatus: (threadId, status) =>
     set((state) => ({

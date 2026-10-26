@@ -1,6 +1,7 @@
 export {
   useAppStore,
   upsertItem,
+  type AppLocale,
   type AppStore,
   type ConnectionStatus,
   type SettingsSectionId,

@@ -1,3 +1,5 @@
+import { useAppStore } from "@pi-web/client-runtime";
+
 export interface SnoozePreset {
   readonly id: "later-today" | "tomorrow" | "next-week" | "one-hour";
   readonly label: string;
@@ -8,6 +10,14 @@ export interface SnoozePreset {
 const SHORT_WEEKDAY_FORMATTER = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const TIME_FORMATTER = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+
+function isZhLocale(): boolean {
+  try {
+    return useAppStore.getState().locale === "zh-CN";
+  } catch {
+    return true;
+  }
+}
 
 function atLocalHour(base: Date, daysFromBase: number, hour: number): Date {
   return new Date(
@@ -28,13 +38,14 @@ function daysUntilNextMonday(dayOfWeek: number): number {
 
 export function resolveSnoozePresets(nowMs = Date.now()): ReadonlyArray<SnoozePreset> {
   const now = new Date(nowMs);
+  const isZh = isZhLocale();
   const presets: SnoozePreset[] = [];
 
   const laterToday = now.getHours() < 12 ? atLocalHour(now, 0, 14) : atLocalHour(now, 0, 18);
   if (laterToday.getTime() - nowMs >= 30 * 60_000) {
     presets.push({
       id: "later-today",
-      label: "Later today",
+      label: isZh ? "今天晚些时候" : "Later today",
       detail: TIME_FORMATTER.format(laterToday),
       untilMs: laterToday.getTime(),
     });
@@ -43,7 +54,7 @@ export function resolveSnoozePresets(nowMs = Date.now()): ReadonlyArray<SnoozePr
   const tomorrow = atLocalHour(now, 1, 9);
   presets.push({
     id: "tomorrow",
-    label: "Tomorrow",
+    label: isZh ? "明天" : "Tomorrow",
     detail: `${SHORT_WEEKDAY_FORMATTER.format(tomorrow)} ${TIME_FORMATTER.format(tomorrow)}`,
     untilMs: tomorrow.getTime(),
   });
@@ -51,7 +62,7 @@ export function resolveSnoozePresets(nowMs = Date.now()): ReadonlyArray<SnoozePr
   const nextMonday = atLocalHour(now, daysUntilNextMonday(now.getDay()), 9);
   presets.push({
     id: "next-week",
-    label: "Next week",
+    label: isZh ? "下周" : "Next week",
     detail: `${SHORT_WEEKDAY_FORMATTER.format(nextMonday)} ${TIME_FORMATTER.format(nextMonday)}`,
     untilMs: nextMonday.getTime(),
   });
@@ -59,7 +70,7 @@ export function resolveSnoozePresets(nowMs = Date.now()): ReadonlyArray<SnoozePr
   const oneHour = new Date(nowMs + 60 * 60_000);
   presets.push({
     id: "one-hour",
-    label: "In 1 hour",
+    label: isZh ? "1 小时后" : "In 1 hour",
     detail: TIME_FORMATTER.format(oneHour),
     untilMs: oneHour.getTime(),
   });
@@ -69,7 +80,8 @@ export function resolveSnoozePresets(nowMs = Date.now()): ReadonlyArray<SnoozePr
 
 export function formatSnoozeWakeLabel(snoozedUntilMs: number, nowMs = Date.now()): string {
   const wakeDate = new Date(snoozedUntilMs);
-  if (Number.isNaN(wakeDate.getTime())) return "Snoozed";
+  const isZh = isZhLocale();
+  if (Number.isNaN(wakeDate.getTime())) return isZh ? "已延后" : "Snoozed";
 
   const now = new Date(nowMs);
   const startOfToday = atLocalHour(now, 0, 0).getTime();
@@ -82,7 +94,9 @@ export function formatSnoozeWakeLabel(snoozedUntilMs: number, nowMs = Date.now()
     return TIME_FORMATTER.format(wakeDate);
   }
   if (wakeMs >= startOfTomorrow && wakeMs < startOfDayAfterTomorrow) {
-    return `Tomorrow ${TIME_FORMATTER.format(wakeDate)}`;
+    return isZh
+      ? `明天 ${TIME_FORMATTER.format(wakeDate)}`
+      : `Tomorrow ${TIME_FORMATTER.format(wakeDate)}`;
   }
   if (wakeMs >= startOfDayAfterTomorrow && wakeMs < startOfWeekAhead) {
     return `${SHORT_WEEKDAY_FORMATTER.format(wakeDate)} ${TIME_FORMATTER.format(wakeDate)}`;
@@ -92,7 +106,7 @@ export function formatSnoozeWakeLabel(snoozedUntilMs: number, nowMs = Date.now()
 
 export function formatCompactRelativeTime(timestampMs: number, nowMs = Date.now()): string {
   const diffSeconds = Math.max(0, Math.floor((nowMs - timestampMs) / 1000));
-  if (diffSeconds < 60) return "now";
+  if (diffSeconds < 60) return isZhLocale() ? "刚刚" : "now";
   const minutes = Math.floor(diffSeconds / 60);
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);

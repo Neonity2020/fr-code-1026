@@ -23,6 +23,7 @@ import {
 import type { ThreadId, ThreadSummary } from "@pi-web/protocol";
 import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
 import { projectBasename } from "../projectIdentity";
 import { resolveSnoozePresets } from "./Sidebar.snooze";
@@ -70,6 +71,7 @@ export function ThreadSidebar() {
   const setSelectedProjectCwd = useAppStore((state) => state.setSelectedProjectCwd);
   const patchThreadSummary = useAppStore((state) => state.patchThreadSummary);
   const setUndoNotice = useAppStore((state) => state.setUndoNotice);
+  const { tr } = useI18n();
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -369,13 +371,13 @@ export function ThreadSidebar() {
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
               >
-                No threads found
+                {tr("未找到匹配的线程", "No threads found")}
               </p>
             ) : (
               <ul
                 id="sidebar-thread-search-results"
                 role="listbox"
-                aria-label="Thread search results"
+                aria-label={tr("线程搜索结果", "Thread search results")}
                 className="flex flex-col gap-px"
               >
                 {searchResults.map((thread, index) => (
@@ -432,7 +434,7 @@ export function ThreadSidebar() {
               snoozedThreads.length === 0 &&
               settledThreads.length === 0 ? (
                 <li className="list-none px-2 py-6 text-center text-xs text-muted-foreground/60">
-                  No threads yet
+                  {tr("暂无线程", "No threads yet")}
                 </li>
               ) : null}
 
@@ -444,7 +446,8 @@ export function ThreadSidebar() {
                       expanded={snoozedExpanded}
                       onClick={() => setSnoozedExpanded((prev) => !prev)}
                     >
-                      Snoozed{!snoozedExpanded ? ` (${snoozedThreads.length})` : null}
+                      {tr("已延后", "Snoozed")}
+                      {!snoozedExpanded ? ` (${snoozedThreads.length})` : null}
                     </CollapsibleSectionHeader>
                   </li>
                   {(snoozedExpanded
@@ -484,7 +487,8 @@ export function ThreadSidebar() {
                         });
                       }}
                     >
-                      Settled{!settledExpanded ? ` (${settledThreads.length})` : null}
+                      {tr("已结项", "Settled")}
+                      {!settledExpanded ? ` (${settledThreads.length})` : null}
                     </CollapsibleSectionHeader>
                   </li>
                   {visibleSettledThreads.map((thread) => (
@@ -509,7 +513,10 @@ export function ThreadSidebar() {
                         className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                       >
                         <PlusIcon aria-hidden className="size-4 shrink-0" />
-                        Show {Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)} more
+                        {tr(
+                          `展开更多 (${Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)})`,
+                          `Show ${Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)} more`,
+                        )}
                       </button>
                     </li>
                   ) : null}
@@ -593,6 +600,7 @@ function ThreadRowContextMenu({
   onDelete: () => void;
 }) {
   const { thread, x, y } = state;
+  const { tr } = useI18n();
   const isPinned = thread.pinnedAt != null;
   const isSettled = thread.settledAt != null;
   const isSnoozed = typeof thread.snoozedUntil === "number" && thread.snoozedUntil > Date.now();
@@ -616,28 +624,30 @@ function ThreadRowContextMenu({
       {!isSettled && !isSnoozed && (
         <ContextMenuButton
           icon={isPinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
-          label={isPinned ? "Unpin thread" : "Pin thread"}
+          label={isPinned ? tr("取消置顶线程", "Unpin thread") : tr("置顶线程", "Pin thread")}
           onClick={() => onPinToggle(!isPinned)}
         />
       )}
 
       <ContextMenuButton
         icon={isSettled ? <Undo2Icon className="size-3.5" /> : <CheckIcon className="size-3.5" />}
-        label={isSettled ? "Un-settle thread" : "Settle thread"}
+        label={
+          isSettled ? tr("恢复已结项线程", "Un-settle thread") : tr("结项线程", "Settle thread")
+        }
         onClick={() => onSettleToggle(!isSettled)}
       />
 
       {isSnoozed ? (
         <ContextMenuButton
           icon={<AlarmClockOffIcon className="size-3.5" />}
-          label="Wake thread now"
+          label={tr("立即唤醒线程", "Wake thread now")}
           onClick={() => onSnooze(null)}
         />
       ) : (
         presets[0] && (
           <ContextMenuButton
             icon={<AlarmClockIcon className="size-3.5" />}
-            label={`Snooze (${presets[0].label})`}
+            label={tr(`延后提醒 (${presets[0].label})`, `Snooze (${presets[0].label})`)}
             shortcut={presets[0].detail}
             onClick={() => onSnooze(presets[0]!.untilMs)}
           />
@@ -648,14 +658,16 @@ function ThreadRowContextMenu({
 
       <ContextMenuButton
         icon={<PencilIcon className="size-3.5" />}
-        label="Rename thread"
+        label={tr("重命名线程", "Rename thread")}
         onClick={onRename}
       />
 
       <ContextMenuButton
         icon={<ListFilterIcon className="size-3.5" />}
         label={
-          selectedProjectCwd === thread.cwd ? "Show all projects" : `Filter by ${projectName}`
+          selectedProjectCwd === thread.cwd
+            ? tr("显示全部项目", "Show all projects")
+            : tr(`按 ${projectName} 筛选`, `Filter by ${projectName}`)
         }
         onClick={onFilterByProject}
       />
@@ -664,12 +676,12 @@ function ThreadRowContextMenu({
 
       <ContextMenuButton
         icon={<FolderIcon className="size-3.5" />}
-        label="Copy Working Directory"
+        label={tr("复制工作区路径", "Copy Working Directory")}
         onClick={onCopyCwd}
       />
       <ContextMenuButton
         icon={<CopyIcon className="size-3.5" />}
-        label="Copy Thread ID"
+        label={tr("复制线程 ID", "Copy Thread ID")}
         onClick={onCopyThreadId}
       />
 
@@ -677,7 +689,7 @@ function ThreadRowContextMenu({
 
       <ContextMenuButton
         icon={<Trash2Icon className="size-3.5" />}
-        label="Delete thread"
+        label={tr("删除线程", "Delete thread")}
         destructive
         onClick={onDelete}
       />

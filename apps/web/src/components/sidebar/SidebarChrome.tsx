@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { memo, useLayoutEffect, useRef, type ReactNode } from "react";
 import { transport, useAppStore, type SidebarUtilityPage } from "@pi-web/client-runtime";
+import { useI18n } from "~/i18n";
 import { observeResize } from "~/lib/observeResize";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { SidebarStageBackdrop } from "../SidebarStageBackdrop";
@@ -111,6 +112,7 @@ function SidebarThreadUndoNoticeBar() {
   const setUndoNotice = useAppStore((state) => state.setUndoNotice);
   const patchThreadSummary = useAppStore((state) => state.patchThreadSummary);
   const setActiveThread = useAppStore((state) => state.setActiveThread);
+  const { tr } = useI18n();
 
   if (!undoNotice) return null;
 
@@ -133,22 +135,24 @@ function SidebarThreadUndoNoticeBar() {
     <div className="pb-1">
       <div className="flex items-center justify-between gap-1.5 rounded-lg border border-sidebar-border bg-sidebar-control-surface px-2.5 py-1.5 text-xs text-sidebar-foreground shadow-xs">
         <span className="min-w-0 flex-1 truncate text-sidebar-muted-foreground">
-          {undoNotice.kind === "settled" ? "Settled" : "Snoozed"}{" "}
+          {undoNotice.kind === "settled"
+            ? tr("已结项", "Settled")
+            : tr("已延后", "Snoozed")}{" "}
           <span className="font-medium text-sidebar-foreground">{undoNotice.title}</span>
         </span>
         <button
           type="button"
           onClick={handleUndo}
-          title={`Undo (${shortcutHint})`}
+          title={tr(`撤销 (${shortcutHint})`, `Undo (${shortcutHint})`)}
           className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-row-hover"
         >
           <Undo2Icon className="size-3" />
-          <span>Undo</span>
+          <span>{tr("撤销", "Undo")}</span>
         </button>
         <button
           type="button"
           onClick={() => setUndoNotice(null)}
-          aria-label="Dismiss undo notice"
+          aria-label={tr("关闭提示", "Dismiss undo notice")}
           className="inline-flex size-4 shrink-0 items-center justify-center rounded text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
         >
           <XIcon className="size-3" />
@@ -189,6 +193,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const setActiveUtilityPage = useAppStore((state) => state.setActiveUtilityPage);
   const connection = useAppStore((state) => state.connection);
   const piStatus = useAppStore((state) => state.piStatus);
+  const { tr } = useI18n();
 
   const isOnUtilityPage = activeUtilityPage !== null;
 
@@ -204,10 +209,13 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 
   const statusText =
     connection === "offline"
-      ? "Disconnected — reconnecting…"
+      ? tr("连接已断开 — 正在重连…", "Disconnected — reconnecting…")
       : piStatus?.installed
-        ? `Pi CLI ${piStatus.version ?? "ready"} · Up to date`
-        : "Connected to FR Code server";
+        ? tr(
+            `Pi CLI ${piStatus.version ?? "已就绪"} · 已是最新`,
+            `Pi CLI ${piStatus.version ?? "ready"} · Up to date`,
+          )
+        : tr("已连接至 FR Code 服务", "Connected to FR Code server");
 
   return (
     <SidebarFooter>
@@ -217,24 +225,24 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
           <SidebarMenuItem className="min-w-0 flex-1">
             <SidebarMenuButton onClick={handleBackClick}>
               <ArrowLeftIcon />
-              <span>Back</span>
+              <span>{tr("返回", "Back")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : (
           <>
             <SidebarUtilityItem
               icon={<SettingsIcon />}
-              label="Settings"
+              label={tr("设置", "Settings")}
               onClick={() => openUtilityPage("settings")}
             />
             <SidebarUtilityItem
               icon={<GitPullRequestArrowIcon />}
-              label="Pull Requests"
+              label={tr("拉取请求", "Pull Requests")}
               onClick={() => openUtilityPage("pull-requests")}
             />
             <SidebarUtilityItem
               icon={<ChartNoAxesColumnIcon />}
-              label="Usage"
+              label={tr("用量统计", "Usage")}
               onClick={() => openUtilityPage("usage")}
             />
           </>

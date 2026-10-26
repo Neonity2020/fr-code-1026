@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { transport, useAppStore } from "@pi-web/client-runtime";
+import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
 import { projectBasename } from "../../projectIdentity";
 import { ProjectIcon } from "../ProjectMonogram";
@@ -28,20 +29,10 @@ import {
   ComboboxSearchInput,
   ComboboxTrigger,
 } from "../ui/combobox";
-import {
-  Dialog,
-  DialogClose,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
-import { Input } from "../ui/input";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { SidebarInput, SidebarMenuButton, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { ProjectFolderBrowserDialog } from "./ProjectFolderBrowserDialog";
 
 const ALL_PROJECTS_VALUE = "__all__";
 
@@ -113,12 +104,13 @@ export function SidebarThreadHeader({
   const selectedProjectCwd = useAppStore((state) => state.selectedProjectCwd);
   const setSelectedProjectCwd = useAppStore((state) => state.setSelectedProjectCwd);
   const activeThreadId = useAppStore((state) => state.activeThreadId);
+  const { tr } = useI18n();
 
   const searchFieldRef = useRef<HTMLDivElement | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [addProjectOpen, setAddProjectOpen] = useState(false);
-  const [newProjectPath, setNewProjectPath] = useState("");
+  const [forceNewThreadOnOpen, setForceNewThreadOnOpen] = useState(false);
 
   const allProjectCwds = Array.from(
     new Set([
@@ -131,7 +123,7 @@ export function SidebarThreadHeader({
   const filterItems: ProjectFilterItem[] = [
     {
       value: ALL_PROJECTS_VALUE,
-      label: "All projects",
+      label: tr("全部项目", "All projects"),
       cwd: null,
       threadCount: threads.filter((t) => !t.settledAt).length,
     },
@@ -154,35 +146,45 @@ export function SidebarThreadHeader({
   const selectedFilterItem =
     filterItems.find((item) => item.cwd === selectedProjectCwd) ?? filterItems[0]!;
 
+  const activeThread = threads.find((t) => t.id === activeThreadId);
+  const currentContextCwd =
+    selectedProjectCwd ?? activeThread?.cwd ?? defaultCwd ?? allProjectCwds[0] ?? "/";
+
   const handleStartNewThread = (event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
     if (event.shiftKey) {
-      setNewProjectPath(selectedProjectCwd ?? defaultCwd ?? "");
+      setForceNewThreadOnOpen(true);
       setAddProjectOpen(true);
       return;
     }
-    const activeThread = threads.find((t) => t.id === activeThreadId);
-    const targetCwd =
-      selectedProjectCwd ?? activeThread?.cwd ?? defaultCwd ?? allProjectCwds[0] ?? "/";
     const state = useAppStore.getState();
     state.markNewThreadRequested();
     transport.dispatch({
       type: "thread.create",
-      cwd: targetCwd,
+      cwd: currentContextCwd,
       ...(state.selectedModel ? { model: state.selectedModel } : {}),
       ...(state.selectedThinkingLevel ? { thinkingLevel: state.selectedThinkingLevel } : {}),
     });
     if (isMobile) setOpenMobile(false);
   };
 
-  const handleConfirmAddProject = (createThreadToo: boolean) => {
-    const trimmed = newProjectPath.trim();
+  const handleOpenProjectFolder = (rawCwd: string) => {
+    const trimmed = rawCwd.trim();
     if (!trimmed) return;
     transport.dispatch({ type: "project.add", cwd: trimmed });
-    setSelectedProjectCwd(trimmed);
-    if (createThreadToo) {
-      const state = useAppStore.getState();
+    if (selectedProjectCwd !== null && selectedProjectCwd !== trimmed) {
+      setSelectedProjectCwd(trimmed);
+    }
+
+    const state = useAppStore.getState();
+    const existingThreadsInProject = state.threads
+      .filter((t) => t.cwd === trimmed && !t.settledAt)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    if (!forceNewThreadOnOpen && existingThreadsInProject.length > 0) {
+      state.setActiveThread(existingThreadsInProject[0]!.id);
+    } else {
       state.markNewThreadRequested();
       transport.dispatch({
         type: "thread.create",
@@ -190,10 +192,9 @@ export function SidebarThreadHeader({
         ...(state.selectedModel ? { model: state.selectedModel } : {}),
         ...(state.selectedThinkingLevel ? { thinkingLevel: state.selectedThinkingLevel } : {}),
       });
-      if (isMobile) setOpenMobile(false);
     }
-    setNewProjectPath("");
-    setAddProjectOpen(false);
+    setForceNewThreadOnOpen(false);
+    if (isMobile) setOpenMobile(false);
   };
 
   return (
@@ -211,8 +212,8 @@ export function SidebarThreadHeader({
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
             onKeyDown={onSearchInputKeyDown}
-            placeholder="Search"
-            aria-label="Search threads"
+            placeholder={tr("搜索", "Search")}
+            aria-label={tr("搜索线程", "Search threads")}
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={hasSearchQuery}
@@ -224,7 +225,7 @@ export function SidebarThreadHeader({
               size="icon-micro"
               variant="ghost-muted"
               className="shrink-0"
-              aria-label="Clear thread search"
+              aria-label={tr("清空线程搜索", "Clear thread search")}
               onClick={() => {
                 onClearSearch();
                 searchInputRef.current?.focus();
@@ -260,8 +261,11 @@ export function SidebarThreadHeader({
                 <SidebarHeaderIconButton
                   label={
                     selectedProjectCwd
-                      ? `Filter threads by project: ${selectedFilterItem.label}`
-                      : "Filter threads by project"
+                      ? tr(
+                          `按项目筛选线程：${selectedFilterItem.label}`,
+                          `Filter threads by project: ${selectedFilterItem.label}`,
+                        )
+                      : tr("按项目筛选线程", "Filter threads by project")
                   }
                 />
               }
@@ -280,12 +284,12 @@ export function SidebarThreadHeader({
               className="max-w-[min(18rem,var(--available-width))] overflow-hidden"
             >
               <ComboboxSearchInput
-                aria-label="Search projects"
-                placeholder="Search projects..."
+                aria-label={tr("搜索项目", "Search projects")}
+                placeholder={tr("搜索项目…", "Search projects...")}
                 value={projectSearchQuery}
                 onChange={(event) => setProjectSearchQuery(event.target.value)}
               />
-              <ComboboxEmpty>No matching projects.</ComboboxEmpty>
+              <ComboboxEmpty>{tr("未找到匹配的项目。", "No matching projects.")}</ComboboxEmpty>
               <ComboboxList>
                 {(item: ProjectFilterItem) => (
                   <ComboboxItem key={item.value} hideIndicator value={item}>
@@ -312,11 +316,11 @@ export function SidebarThreadHeader({
             </ComboboxPopup>
           </Combobox>
 
-          {/* 2. Add project icon button */}
+          {/* 2. Open / Add project folder icon button */}
           <SidebarHeaderIconButton
-            label="Add project"
+            label={tr("打开项目文件夹", "Open project folder")}
             onClick={() => {
-              setNewProjectPath(selectedProjectCwd ?? defaultCwd ?? "");
+              setForceNewThreadOnOpen(false);
               setAddProjectOpen(true);
             }}
           >
@@ -325,12 +329,15 @@ export function SidebarThreadHeader({
 
           {/* 3. New thread icon button */}
           <SidebarHeaderIconButton
-            label="New thread"
+            label={tr("新建线程", "New thread")}
             tooltip={
               <span className="flex flex-col gap-0.5">
-                <span>New thread</span>
+                <span>{tr("新建线程", "New thread")}</span>
                 <span className="text-muted-foreground">
-                  New thread in another project: Shift+click
+                  {tr(
+                    "在其他项目中新建线程：Shift+点击",
+                    "New thread in another project: Shift+click",
+                  )}
                 </span>
               </span>
             }
@@ -341,51 +348,18 @@ export function SidebarThreadHeader({
         </div>
       </div>
 
-      {/* Add Project Dialog */}
-      <Dialog open={addProjectOpen} onOpenChange={setAddProjectOpen}>
-        <DialogPopup>
-          <DialogHeader>
-            <DialogTitle>Add Project Workspace</DialogTitle>
-            <DialogDescription>
-              Enter the local directory path for the project you want to work on with Pi.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogPanel>
-            <form
-              id="add-project-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                handleConfirmAddProject(true);
-              }}
-              className="flex flex-col gap-3"
-            >
-              <Input
-                autoFocus
-                placeholder="/Users/you/workspace/my-project"
-                value={newProjectPath}
-                onChange={(event) => setNewProjectPath(event.currentTarget.value)}
-              />
-            </form>
-          </DialogPanel>
-          <DialogFooter>
-            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-            <Button
-              variant="outline"
-              disabled={!newProjectPath.trim()}
-              onClick={() => handleConfirmAddProject(false)}
-            >
-              Add Project Only
-            </Button>
-            <Button
-              type="submit"
-              form="add-project-form"
-              disabled={!newProjectPath.trim()}
-            >
-              Add & Start Thread
-            </Button>
-          </DialogFooter>
-        </DialogPopup>
-      </Dialog>
+      {/* Project Folder Browser Dialog */}
+      <ProjectFolderBrowserDialog
+        open={addProjectOpen}
+        onOpenChange={(nextOpen) => {
+          setAddProjectOpen(nextOpen);
+          if (!nextOpen) {
+            setForceNewThreadOnOpen(false);
+          }
+        }}
+        initialCwd={currentContextCwd}
+        onOpenProject={handleOpenProjectFolder}
+      />
     </>
   );
 }

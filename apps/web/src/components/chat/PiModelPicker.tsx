@@ -29,6 +29,7 @@ import {
 } from "react";
 import type { PiModelInfo, PiThinkingLevel } from "@pi-web/protocol";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { getThinkingLevelLabel, useI18n } from "~/i18n";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
@@ -207,6 +208,7 @@ export const PiModelPicker = memo(function PiModelPicker(props: {
 }) {
   const { models, selectedModelSlug, onSelectModel, disabled = false, triggerVariant = "composer" } =
     props;
+  const { tr } = useI18n();
 
   const [isOpen, setIsOpen] = useState(false);
   const [favoriteSlugs, setFavoriteSlugs] = useLocalStorage<string[]>(
@@ -246,7 +248,7 @@ export const PiModelPicker = memo(function PiModelPicker(props: {
 
   const triggerTitle = selectedModel
     ? getDisplayModelName(selectedModel)
-    : selectedModelSlug || "Choose model";
+    : selectedModelSlug || tr("选择模型", "Choose model");
 
   const triggerTooltip = selectedModel
     ? `${getDisplayModelName(selectedModel)} (${selectedModel.slug})`
@@ -490,7 +492,7 @@ export const PiModelPicker = memo(function PiModelPicker(props: {
                     }}
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="Favorites"
+                    aria-label={tr("收藏模型", "Favorites")}
                     aria-pressed={activeTab === "favorites"}
                     onClick={() => {
                       setActiveTab("favorites");
@@ -509,7 +511,7 @@ export const PiModelPicker = memo(function PiModelPicker(props: {
                   </Button>
                 }
               />
-              <TooltipPopup side="right">Favorites</TooltipPopup>
+              <TooltipPopup side="right">{tr("收藏", "Favorites")}</TooltipPopup>
             </Tooltip>
 
             <div className="my-0.5 w-full border-b border-border/70" />
@@ -557,8 +559,8 @@ export const PiModelPicker = memo(function PiModelPicker(props: {
                 role="combobox"
                 aria-expanded={true}
                 aria-controls="pi-model-picker-listbox"
-                aria-label="Search models"
-                placeholder="Search models..."
+                aria-label={tr("搜索模型", "Search models")}
+                placeholder={tr("搜索模型…", "Search models...")}
                 value={searchQuery}
                 onChange={(event) => {
                   setSearchQuery(event.target.value);
@@ -583,7 +585,7 @@ export const PiModelPicker = memo(function PiModelPicker(props: {
               id="pi-model-picker-listbox"
               ref={listRef}
               role="listbox"
-              aria-label="Models"
+              aria-label={tr("模型列表", "Models")}
               className="min-h-0 flex-1 overflow-y-auto p-1"
             >
               {displayedModels.length > 0 ? (
@@ -605,10 +607,10 @@ export const PiModelPicker = memo(function PiModelPicker(props: {
               ) : (
                 <div className="px-2 py-8 text-center text-xs text-muted-foreground">
                   {searchQuery.trim()
-                    ? "No models match your search."
+                    ? tr("没有匹配的模型。", "No models match your search.")
                     : activeTab === "favorites"
-                      ? "Star models to pin them here."
-                      : "No Pi models discovered."}
+                      ? tr("点击星标即可在此处收藏常用模型。", "Star models to pin them here.")
+                      : tr("未检测到可用的 Pi 模型。", "No Pi models discovered.")}
                 </div>
               )}
             </div>
@@ -629,6 +631,7 @@ export const PiThinkingPicker = memo(function PiThinkingPicker(props: {
   const { levels, selectedLevel, onSelectLevel, disabled = false, triggerVariant = "composer" } =
     props;
   const [isOpen, setIsOpen] = useState(false);
+  const { locale, tr } = useI18n();
 
   if (levels.length === 0) {
     return null;
@@ -648,7 +651,7 @@ export const PiThinkingPicker = memo(function PiThinkingPicker(props: {
           <button
             type="button"
             disabled={disabled}
-            aria-label="Thinking effort"
+            aria-label={tr("思考强度", "Thinking effort")}
             className={
               triggerVariant === "settings"
                 ? "inline-flex h-8 items-center justify-between gap-1.5 rounded-lg border border-input bg-background px-2.5 text-xs font-normal text-foreground shadow-xs/5 transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:opacity-50 dark:bg-input/32"
@@ -658,13 +661,13 @@ export const PiThinkingPicker = memo(function PiThinkingPicker(props: {
         }
       >
         <BrainIcon className="size-3.5 shrink-0" />
-        <span>{THINKING_LEVEL_LABELS[effectiveLevel] ?? effectiveLevel}</span>
+        <span>{getThinkingLevelLabel(effectiveLevel, locale)}</span>
         <ChevronDownIcon className="size-3 shrink-0 opacity-60" />
       </PopoverTrigger>
       <PopoverPopup align="start" className="w-40 p-1">
         <div className="flex flex-col gap-0.5">
           <div className="px-2 py-1 text-2xs font-medium text-muted-foreground">
-            Thinking effort
+            {tr("思考强度", "Thinking effort")}
           </div>
           {levels.map((level) => {
             const isSelected = level === effectiveLevel;
@@ -683,7 +686,7 @@ export const PiThinkingPicker = memo(function PiThinkingPicker(props: {
                     : "text-foreground hover:bg-accent/60",
                 )}
               >
-                <span>{THINKING_LEVEL_LABELS[level] ?? level}</span>
+                <span>{getThinkingLevelLabel(level, locale)}</span>
                 {isSelected ? <CheckIcon className="size-3.5" /> : null}
               </button>
             );

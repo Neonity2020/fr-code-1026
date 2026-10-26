@@ -157,10 +157,9 @@ function reduceEvent(event: DomainEvent): TurnItem[] | null {
         store.setProjects([...store.projects, event.thread.cwd]);
       }
       if (store.newThreadRequested) {
+        store.setActiveThread(event.thread.id);
         useAppStore.setState({
           newThreadRequested: false,
-          activeThreadId: event.thread.id,
-          activeUtilityPage: null,
         });
       }
       return null;
