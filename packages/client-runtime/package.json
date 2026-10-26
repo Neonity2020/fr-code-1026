@@ -1,0 +1,21 @@
+{
+  "name": "@pi-web/client-runtime",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pi-web/protocol": "workspace:*",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

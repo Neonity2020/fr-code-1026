@@ -1,0 +1,21 @@
+{
+  "name": "@pi-web/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pi-web/protocol": "workspace:*",
+    "@pi-web/provider-pi": "workspace:*",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.4",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3"
+  }
+}

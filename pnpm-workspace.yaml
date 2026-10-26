@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+
+# t3code 对 @pierre/diffs 打了本地补丁（diff 渲染行为修正），一并沿用。
+# patch 文件复制自 t3code/patches/@pierre%2Fdiffs@1.6.1.patch
+allowBuilds:
+  esbuild: true
+
+patchedDependencies:
+  "@pierre/diffs@1.6.1": patches/@pierre__diffs@1.6.1.patch
