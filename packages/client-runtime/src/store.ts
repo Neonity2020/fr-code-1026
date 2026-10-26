@@ -7,6 +7,7 @@ import { create } from "zustand";
 import {
   upsertTurnItem,
   type PiStatus,
+  type PiThinkingLevel,
   type ThreadId,
   type ThreadSummary,
   type TurnItem,
@@ -53,6 +54,8 @@ export interface AppStore {
   connection: ConnectionStatus;
   defaultCwd: string | null;
   piStatus: PiStatus | null;
+  selectedModel: string | null;
+  selectedThinkingLevel: PiThinkingLevel | null;
   /** 「新建线程」意图：下一个 thread.created 事件到达时自动选中 */
   newThreadRequested: boolean;
 
@@ -65,6 +68,7 @@ export interface AppStore {
   setUndoNotice(notice: ThreadUndoNotice | null): void;
   patchThreadSummary(threadId: ThreadId, patch: Partial<ThreadSummary>): void;
   setConfig(config: { defaultCwd: string; projects?: string[]; piStatus: PiStatus | null }): void;
+  setSelectedModel(model: string, thinkingLevel?: PiThinkingLevel | null): void;
   setActiveThread(threadId: ThreadId | null): void;
   markNewThreadRequested(): void;
   setThreadStatus(threadId: ThreadId, status: ThreadLiveStatus): void;
@@ -90,6 +94,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   connection: "connecting",
   defaultCwd: null,
   piStatus: null,
+  selectedModel: null,
+  selectedThinkingLevel: null,
   newThreadRequested: false,
 
   setConnection: (connection) => set({ connection }),
@@ -109,12 +115,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       defaultCwd,
       piStatus,
+      selectedModel:
+        state.selectedModel ??
+        piStatus?.defaultModel ??
+        piStatus?.models?.[0]?.slug ??
+        null,
+      selectedThinkingLevel:
+        state.selectedThinkingLevel ?? piStatus?.defaultThinkingLevel ?? null,
       projects:
         projects && projects.length > 0
           ? projects
           : state.projects.length > 0
             ? state.projects
             : [defaultCwd],
+    })),
+  setSelectedModel: (model, thinkingLevel) =>
+    set((state) => ({
+      selectedModel: model,
+      selectedThinkingLevel:
+        thinkingLevel !== undefined ? thinkingLevel : state.selectedThinkingLevel,
     })),
   setActiveThread: (threadId) => set({ activeThreadId: threadId, activeUtilityPage: null }),
   markNewThreadRequested: () => set({ newThreadRequested: true }),

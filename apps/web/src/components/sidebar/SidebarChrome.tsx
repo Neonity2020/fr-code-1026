@@ -1,36 +1,42 @@
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
-  DownloadIcon,
+  CheckIcon,
   GitPullRequestArrowIcon,
+  RotateCwIcon,
   SettingsIcon,
   Undo2Icon,
   XIcon,
 } from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
+import { memo, useLayoutEffect, useRef, type ReactNode } from "react";
 import { transport, useAppStore, type SidebarUtilityPage } from "@pi-web/client-runtime";
 import { observeResize } from "~/lib/observeResize";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { SidebarStageBackdrop } from "../SidebarStageBackdrop";
-import { T3Wordmark } from "../T3Wordmark";
+import { FRWordmark } from "../T3Wordmark";
 import {
   SidebarFooter,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-const HEADER_CONTENT_PADDING =
-  "pl-[calc(var(--workspace-controls-left)+var(--workspace-titlebar-control-size)+0.5rem)] pr-3";
-
-function WordmarkLockup() {
+function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    <span className="flex min-w-0 items-center gap-1.5" aria-label="T3 Code">
-      <T3Wordmark />
-      <span className="truncate text-sm font-medium tracking-tight text-white drop-shadow-[0_1px_1px_rgba(2,6,23,0.72)]">
+    <span
+      className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight"
+      aria-label="FR Code"
+    >
+      <FRWordmark aria-label="FR" className="h-[1cap] w-auto shrink-0" />
+      <span
+        className={cn(
+          "truncate [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",
+          onBackdrop ? "text-white/70" : "text-muted-foreground",
+        )}
+      >
         Code
       </span>
     </span>
@@ -60,45 +66,45 @@ export function SidebarBrandWidthProbe({
     <div
       ref={probeRef}
       aria-hidden="true"
-      className={cn(
-        "pointer-events-none invisible fixed top-0 left-0 -z-10 flex w-max items-center",
-        HEADER_CONTENT_PADDING,
-      )}
+      className="pointer-events-none invisible fixed top-0 left-0 -z-10 flex w-max border-r border-transparent pr-3"
     >
-      <div className="flex items-center gap-1.5">
-        <WordmarkLockup />
+      <div className="ml-[var(--workspace-titlebar-content-left)] flex">
+        <SidebarBrandMark onBackdrop={false} />
       </div>
     </div>
   );
 }
 
-export function SidebarChromeHeader() {
+export const SidebarChromeHeader = memo(function SidebarChromeHeader() {
   const { isMobile, setOpenMobile } = useSidebar();
   const setActiveUtilityPage = useAppStore((state) => state.setActiveUtilityPage);
 
   return (
-    <SidebarHeader
-      className={cn(
-        "relative h-[var(--workspace-topbar-height)] justify-center border-b border-border py-0 text-white",
-        HEADER_CONTENT_PADDING,
-      )}
-    >
+    <div className="relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 pr-3">
       <SidebarStageBackdrop variant="nightly" />
-      <div className="relative z-10 flex min-w-0 items-center justify-between gap-2">
+      <div className="relative top-[calc(var(--workspace-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
+        <SidebarTrigger
+          variant="media-navigation"
+          className="relative top-auto translate-y-0"
+          aria-label="Toggle main sidebar"
+        />
+      </div>
+      <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
         <button
           type="button"
+          aria-label="Go to threads"
           onClick={() => {
             setActiveUtilityPage(null);
             if (isMobile) setOpenMobile(false);
           }}
-          className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md text-left transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+          className="relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-white outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex"
         >
-          <WordmarkLockup />
+          <SidebarBrandMark onBackdrop />
         </button>
       </div>
-    </SidebarHeader>
+    </div>
   );
-}
+});
 
 function SidebarThreadUndoNoticeBar() {
   const undoNotice = useAppStore((state) => state.undoNotice);
@@ -124,7 +130,7 @@ function SidebarThreadUndoNoticeBar() {
   const shortcutHint = isMacPlatform(navigator.platform) ? "⌘Z" : "Ctrl+Z";
 
   return (
-    <div className="px-2 pb-1">
+    <div className="pb-1">
       <div className="flex items-center justify-between gap-1.5 rounded-lg border border-sidebar-border bg-sidebar-control-surface px-2.5 py-1.5 text-xs text-sidebar-foreground shadow-xs">
         <span className="min-w-0 flex-1 truncate text-sidebar-muted-foreground">
           {undoNotice.kind === "settled" ? "Settled" : "Snoozed"}{" "}
@@ -152,7 +158,32 @@ function SidebarThreadUndoNoticeBar() {
   );
 }
 
-export function SidebarChromeFooter() {
+function SidebarUtilityItem({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <SidebarMenuItem className="shrink-0">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+              {icon}
+            </SidebarMenuButton>
+          }
+        />
+        <TooltipPopup side="top">{label}</TooltipPopup>
+      </Tooltip>
+    </SidebarMenuItem>
+  );
+}
+
+export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const { isMobile, setOpenMobile } = useSidebar();
   const activeUtilityPage = useAppStore((state) => state.activeUtilityPage);
   const setActiveUtilityPage = useAppStore((state) => state.setActiveUtilityPage);
@@ -175,8 +206,8 @@ export function SidebarChromeFooter() {
     connection === "offline"
       ? "Disconnected — reconnecting…"
       : piStatus?.installed
-        ? `Pi CLI ${piStatus.version ?? "ready"} · Connected`
-        : "Connected to pi-web server";
+        ? `Pi CLI ${piStatus.version ?? "ready"} · Up to date`
+        : "Connected to FR Code server";
 
   return (
     <SidebarFooter>
@@ -191,82 +222,47 @@ export function SidebarChromeFooter() {
           </SidebarMenuItem>
         ) : (
           <>
-            <SidebarMenuItem>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton
-                      size="sm"
-                      className="size-7 justify-center p-0 text-sidebar-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      aria-label="Settings"
-                      onClick={() => openUtilityPage("settings")}
-                    >
-                      <SettingsIcon className="size-3.5" />
-                    </SidebarMenuButton>
-                  }
-                />
-                <TooltipPopup side="top">Settings</TooltipPopup>
-              </Tooltip>
-            </SidebarMenuItem>
-
-            <SidebarMenuItem>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton
-                      size="sm"
-                      className="size-7 justify-center p-0 text-sidebar-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      aria-label="Pull Requests"
-                      onClick={() => openUtilityPage("pull-requests")}
-                    >
-                      <GitPullRequestArrowIcon className="size-3.5" />
-                    </SidebarMenuButton>
-                  }
-                />
-                <TooltipPopup side="top">Pull Requests</TooltipPopup>
-              </Tooltip>
-            </SidebarMenuItem>
-
-            <SidebarMenuItem>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton
-                      size="sm"
-                      className="size-7 justify-center p-0 text-sidebar-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      aria-label="Usage"
-                      onClick={() => openUtilityPage("usage")}
-                    >
-                      <ChartNoAxesColumnIcon className="size-3.5" />
-                    </SidebarMenuButton>
-                  }
-                />
-                <TooltipPopup side="top">Usage</TooltipPopup>
-              </Tooltip>
-            </SidebarMenuItem>
+            <SidebarUtilityItem
+              icon={<SettingsIcon />}
+              label="Settings"
+              onClick={() => openUtilityPage("settings")}
+            />
+            <SidebarUtilityItem
+              icon={<GitPullRequestArrowIcon />}
+              label="Pull Requests"
+              onClick={() => openUtilityPage("pull-requests")}
+            />
+            <SidebarUtilityItem
+              icon={<ChartNoAxesColumnIcon />}
+              label="Usage"
+              onClick={() => openUtilityPage("usage")}
+            />
           </>
         )}
 
-        <SidebarMenuItem className="ml-auto">
+        <SidebarMenuItem className="ml-auto shrink-0">
           <Tooltip>
             <TooltipTrigger
               render={
                 <SidebarMenuButton
-                  size="sm"
+                  size="icon"
                   aria-label={statusText}
                   onClick={() => openUtilityPage("settings")}
-                  className="relative size-7 justify-center overflow-visible rounded-full bg-sidebar-control-surface p-0 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground active:bg-sidebar-row-hover"
+                  className="relative size-8 justify-center overflow-visible rounded-full bg-sidebar-control-surface p-0 text-sidebar-foreground hover:bg-sidebar-row-hover active:bg-sidebar-row-hover"
                 >
-                  <DownloadIcon className="size-3.5" />
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2 ring-sidebar",
-                      connection === "online" && "bg-sky-500",
-                      connection === "connecting" && "bg-amber-500",
-                      connection === "offline" && "bg-destructive",
-                    )}
-                  />
+                  <span className="relative grid size-4 place-items-center">
+                    <RotateCwIcon className="size-4" />
+                    <span
+                      className={cn(
+                        "absolute -right-1 -bottom-1 grid size-2.5 place-items-center rounded-full ring-2 ring-background",
+                        connection === "offline"
+                          ? "bg-destructive text-white"
+                          : "bg-foreground text-background",
+                      )}
+                    >
+                      <CheckIcon className="size-2" strokeWidth={3} />
+                    </span>
+                  </span>
                 </SidebarMenuButton>
               }
             />
@@ -276,4 +272,4 @@ export function SidebarChromeFooter() {
       </SidebarMenu>
     </SidebarFooter>
   );
-}
+});

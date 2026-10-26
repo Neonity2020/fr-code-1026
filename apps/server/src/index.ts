@@ -154,7 +154,10 @@ wss.on("connection", (socket) => {
         try {
           switch (command.type) {
             case "thread.create": {
-              store.createThread(command.cwd, command.title);
+              store.createThread(command.cwd, command.title, {
+                model: command.model,
+                thinkingLevel: command.thinkingLevel,
+              });
               send(socket, { kind: "ack", commandId });
               return;
             }
@@ -169,6 +172,25 @@ wss.on("connection", (socket) => {
               const title = command.title.trim();
               if (title.length > 0) {
                 store.updateSummary(command.threadId, { title }, { preserveUpdatedAt: true });
+              }
+              send(socket, { kind: "ack", commandId });
+              return;
+            }
+            case "thread.set_model": {
+              const existingRunner = runners.get(command.threadId);
+              if (existingRunner) {
+                void existingRunner.setModel(command.model, command.thinkingLevel);
+              } else {
+                store.updateSummary(
+                  command.threadId,
+                  {
+                    model: command.model,
+                    ...(command.thinkingLevel !== undefined
+                      ? { thinkingLevel: command.thinkingLevel }
+                      : {}),
+                  },
+                  { preserveUpdatedAt: true },
+                );
               }
               send(socket, { kind: "ack", commandId });
               return;
@@ -255,7 +277,10 @@ wss.on("connection", (socket) => {
                   wokeAt: null,
                 });
               }
-              void runner.sendMessage(command.text);
+              void runner.sendMessage(command.text, {
+                model: command.model,
+                thinkingLevel: command.thinkingLevel,
+              });
               send(socket, { kind: "ack", commandId });
               return;
             }

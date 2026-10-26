@@ -9,20 +9,23 @@ import {
 import {
   useRef,
   useState,
+  type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
 import { transport, useAppStore } from "@pi-web/client-runtime";
+import { cn } from "~/lib/utils";
 import { projectBasename } from "../../projectIdentity";
 import { ProjectIcon } from "../ProjectMonogram";
 import { Button } from "../ui/button";
 import {
   Combobox,
   ComboboxEmpty,
-  ComboboxInput,
   ComboboxItem,
   ComboboxList,
   ComboboxPopup,
+  ComboboxSearchInput,
   ComboboxTrigger,
 } from "../ui/combobox";
 import {
@@ -49,6 +52,45 @@ interface ProjectFilterItem {
   threadCount: number;
 }
 
+export function SidebarHeaderIconButton({
+  label,
+  tooltip = label,
+  className,
+  children,
+  ...rest
+}: {
+  label: string;
+  tooltip?: ReactNode;
+  className?: string | undefined;
+  children?: ReactNode;
+} & Omit<
+  ComponentProps<typeof SidebarMenuButton>,
+  "children" | "className" | "tooltip" | "isActive" | "aria-label"
+>) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <SidebarMenuButton
+            size="icon"
+            type="button"
+            aria-label={label}
+            {...rest}
+            className={cn("relative size-7 shrink-0", className)}
+          />
+        }
+      >
+        {children}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+        />
+      </TooltipTrigger>
+      <TooltipPopup side="top">{tooltip}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 export function SidebarThreadHeader({
   searchInputRef,
   searchQuery,
@@ -72,10 +114,11 @@ export function SidebarThreadHeader({
   const setSelectedProjectCwd = useAppStore((state) => state.setSelectedProjectCwd);
   const activeThreadId = useAppStore((state) => state.activeThreadId);
 
+  const searchFieldRef = useRef<HTMLDivElement | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [newProjectPath, setNewProjectPath] = useState("");
-  const filterSearchInputRef = useRef<HTMLInputElement | null>(null);
 
   const allProjectCwds = Array.from(
     new Set([
@@ -100,6 +143,14 @@ export function SidebarThreadHeader({
     })),
   ];
 
+  const filteredProjectItems = projectSearchQuery.trim()
+    ? filterItems.filter(
+        (item) =>
+          item.label.toLowerCase().includes(projectSearchQuery.trim().toLowerCase()) ||
+          (item.cwd ?? "").toLowerCase().includes(projectSearchQuery.trim().toLowerCase()),
+      )
+    : filterItems;
+
   const selectedFilterItem =
     filterItems.find((item) => item.cwd === selectedProjectCwd) ?? filterItems[0]!;
 
@@ -114,8 +165,14 @@ export function SidebarThreadHeader({
     const activeThread = threads.find((t) => t.id === activeThreadId);
     const targetCwd =
       selectedProjectCwd ?? activeThread?.cwd ?? defaultCwd ?? allProjectCwds[0] ?? "/";
-    useAppStore.getState().markNewThreadRequested();
-    transport.dispatch({ type: "thread.create", cwd: targetCwd });
+    const state = useAppStore.getState();
+    state.markNewThreadRequested();
+    transport.dispatch({
+      type: "thread.create",
+      cwd: targetCwd,
+      ...(state.selectedModel ? { model: state.selectedModel } : {}),
+      ...(state.selectedThinkingLevel ? { thinkingLevel: state.selectedThinkingLevel } : {}),
+    });
     if (isMobile) setOpenMobile(false);
   };
 
@@ -125,8 +182,14 @@ export function SidebarThreadHeader({
     transport.dispatch({ type: "project.add", cwd: trimmed });
     setSelectedProjectCwd(trimmed);
     if (createThreadToo) {
-      useAppStore.getState().markNewThreadRequested();
-      transport.dispatch({ type: "thread.create", cwd: trimmed });
+      const state = useAppStore.getState();
+      state.markNewThreadRequested();
+      transport.dispatch({
+        type: "thread.create",
+        cwd: trimmed,
+        ...(state.selectedModel ? { model: state.selectedModel } : {}),
+        ...(state.selectedThinkingLevel ? { thinkingLevel: state.selectedThinkingLevel } : {}),
+      });
       if (isMobile) setOpenMobile(false);
     }
     setNewProjectPath("");
@@ -135,237 +198,190 @@ export function SidebarThreadHeader({
 
   return (
     <>
-      <div className="flex flex-col gap-1 px-2 pt-2 pb-1">
-        <div className="flex items-center gap-1">
-          <div className="relative min-w-0 flex-1">
-            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 -translate-y-1/2 text-sidebar-muted-foreground" />
-            <SidebarInput
-              ref={searchInputRef}
-              size="sm"
-              className="w-full rounded-lg border-transparent bg-sidebar-control-surface [&_input]:ps-6 [&_input]:pe-6 [&_input]:text-xs [&_input]:leading-none [&_input]:placeholder:text-sidebar-muted-foreground"
-              placeholder="Search"
-              aria-label="Search threads"
-              value={searchQuery}
-              onChange={(event) => onSearchQueryChange(event.target.value)}
-              onKeyDown={onSearchInputKeyDown}
-            />
-            {hasSearchQuery && (
-              <button
-                type="button"
-                aria-label="Clear search query"
-                className="absolute top-1/2 right-1.5 z-10 inline-flex size-4 -translate-y-1/2 items-center justify-center rounded-sm text-sidebar-muted-foreground transition-colors hover:text-sidebar-foreground"
-                onClick={onClearSearch}
-              >
-                <XIcon className="size-3" />
-              </button>
-            )}
-          </div>
+      <div className="flex items-center gap-1">
+        <div
+          ref={searchFieldRef}
+          className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+        >
+          <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color)" />
+          <SidebarInput
+            ref={searchInputRef}
+            nativeInput
+            type="search"
+            value={searchQuery}
+            onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
+            onKeyDown={onSearchInputKeyDown}
+            placeholder="Search"
+            aria-label="Search threads"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={hasSearchQuery}
+            className="min-w-0 flex-1"
+          />
+          {hasSearchQuery ? (
+            <Button
+              type="button"
+              size="icon-micro"
+              variant="ghost-muted"
+              className="shrink-0"
+              aria-label="Clear thread search"
+              onClick={() => {
+                onClearSearch();
+                searchInputRef.current?.focus();
+              }}
+            >
+              <XIcon className="size-3" />
+            </Button>
+          ) : null}
+        </div>
 
+        <div className="flex shrink-0 items-center">
+          {/* 1. Filter threads by project icon button */}
           <Combobox
             items={filterItems}
-            value={selectedFilterItem}
+            filteredItems={filteredProjectItems}
+            autoHighlight
+            itemToStringLabel={(item) => item.label}
+            isItemEqualToValue={(a, b) => a.value === b.value}
             open={filterOpen}
             onOpenChange={(open) => {
               setFilterOpen(open);
-              if (open) {
-                requestAnimationFrame(() => filterSearchInputRef.current?.focus());
-              }
+              if (!open) setProjectSearchQuery("");
             }}
-            itemToStringLabel={(item: ProjectFilterItem | null) => item?.label ?? ""}
-            itemToStringValue={(item: ProjectFilterItem | null) => item?.value ?? ""}
-            onValueChange={(item: ProjectFilterItem | null) => {
+            value={selectedFilterItem}
+            onValueChange={(item) => {
               if (!item) return;
               setSelectedProjectCwd(item.cwd);
               setFilterOpen(false);
             }}
           >
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <ComboboxTrigger
-                    render={
-                      <SidebarMenuButton
-                        size="sm"
-                        aria-label={
-                          selectedProjectCwd
-                            ? `Filter by project (${projectBasename(selectedProjectCwd)})`
-                            : "Filter by project"
-                        }
-                        isActive={selectedProjectCwd !== null}
-                        className="relative size-7 shrink-0 justify-center rounded-lg bg-sidebar-control-surface p-0 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground"
-                      />
-                    }
-                  >
-                    <ListFilterIcon className="size-3.5" />
-                    {selectedProjectCwd !== null && (
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary ring-2 ring-sidebar"
-                      />
-                    )}
-                  </ComboboxTrigger>
-                }
-              />
-              <TooltipPopup side="bottom">
-                {selectedProjectCwd
-                  ? `Filtered: ${projectBasename(selectedProjectCwd)}`
-                  : "Filter by project"}
-              </TooltipPopup>
-            </Tooltip>
-
-            <ComboboxPopup
-              side="bottom"
-              align="end"
-              sideOffset={6}
-              className="w-64"
-              initialFocus={filterSearchInputRef}
-            >
-              <div className="border-b p-1">
-                <ComboboxInput
-                  ref={filterSearchInputRef}
-                  placeholder="Search projects..."
-                  size="sm"
-                  showTrigger={false}
-                  aria-label="Search projects"
-                  className="border-0 bg-transparent shadow-none before:hidden focus-within:ring-0"
+            <ComboboxTrigger
+              render={
+                <SidebarHeaderIconButton
+                  label={
+                    selectedProjectCwd
+                      ? `Filter threads by project: ${selectedFilterItem.label}`
+                      : "Filter threads by project"
+                  }
                 />
-              </div>
-              <ComboboxEmpty>No projects found.</ComboboxEmpty>
-              <ComboboxList className="max-h-60 py-1">
+              }
+            >
+              {selectedProjectCwd ? (
+                <span className="flex shrink-0">
+                  <ProjectIcon projectName={selectedFilterItem.label} className="size-4" />
+                </span>
+              ) : (
+                <ListFilterIcon className="size-4" />
+              )}
+            </ComboboxTrigger>
+            <ComboboxPopup
+              align="start"
+              anchor={searchFieldRef}
+              className="max-w-[min(18rem,var(--available-width))] overflow-hidden"
+            >
+              <ComboboxSearchInput
+                aria-label="Search projects"
+                placeholder="Search projects..."
+                value={projectSearchQuery}
+                onChange={(event) => setProjectSearchQuery(event.target.value)}
+              />
+              <ComboboxEmpty>No matching projects.</ComboboxEmpty>
+              <ComboboxList>
                 {(item: ProjectFilterItem) => (
-                  <ComboboxItem
-                    key={item.value}
-                    value={item}
-                    hideIndicator
-                    className="min-h-8 gap-2 py-1.5 text-xs sm:text-xs"
-                  >
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      {item.cwd === null ? (
-                        <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ProjectIcon projectName={item.label} className="size-3.5 shrink-0" />
-                      )}
-                      <MiddleTruncate
-                        value={item.label}
-                        className={
-                          item.cwd === selectedProjectCwd
-                            ? "flex-1 font-medium text-foreground"
-                            : "flex-1"
-                        }
-                      />
-                      <span className="shrink-0 font-mono text-2xs text-muted-foreground tabular-nums">
-                        {item.threadCount}
-                      </span>
+                  <ComboboxItem key={item.value} hideIndicator value={item}>
+                    {item.cwd ? (
+                      <ProjectIcon projectName={item.label} className="size-4 shrink-0" />
+                    ) : (
+                      <FolderIcon className="size-4 shrink-0" />
+                    )}
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm">{item.label}</span>
+                      {item.cwd ? (
+                        <MiddleTruncate
+                          value={item.cwd}
+                          className="text-2xs text-muted-foreground"
+                        />
+                      ) : null}
                     </div>
+                    <span className="ml-auto font-mono text-2xs text-muted-foreground tabular-nums">
+                      {item.threadCount}
+                    </span>
                   </ComboboxItem>
                 )}
               </ComboboxList>
             </ComboboxPopup>
           </Combobox>
 
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <SidebarMenuButton
-                  size="sm"
-                  aria-label="Add project"
-                  onClick={() => {
-                    setNewProjectPath(selectedProjectCwd ?? defaultCwd ?? "");
-                    setAddProjectOpen(true);
-                  }}
-                  className="size-7 shrink-0 justify-center rounded-lg bg-sidebar-control-surface p-0 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground active:bg-sidebar-row-hover"
-                >
-                  <FolderPlusIcon className="size-3.5" />
-                </SidebarMenuButton>
-              }
-            />
-            <TooltipPopup side="bottom">Add project</TooltipPopup>
-          </Tooltip>
+          {/* 2. Add project icon button */}
+          <SidebarHeaderIconButton
+            label="Add project"
+            onClick={() => {
+              setNewProjectPath(selectedProjectCwd ?? defaultCwd ?? "");
+              setAddProjectOpen(true);
+            }}
+          >
+            <FolderPlusIcon />
+          </SidebarHeaderIconButton>
 
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <SidebarMenuButton
-                  size="sm"
-                  aria-label="New thread"
-                  data-testid="new-thread-button"
-                  onClick={handleStartNewThread}
-                  className="size-7 shrink-0 justify-center rounded-lg bg-sidebar-control-surface p-0 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground active:bg-sidebar-row-hover"
-                >
-                  <SquarePenIcon className="size-3.5" />
-                </SidebarMenuButton>
-              }
-            />
-            <TooltipPopup side="bottom">
-              New thread
-              {selectedProjectCwd ? ` in ${projectBasename(selectedProjectCwd)}` : ""} · Shift+click
-              to choose path
-            </TooltipPopup>
-          </Tooltip>
-        </div>
-
-        {selectedProjectCwd !== null && (
-          <div className="flex items-center justify-between gap-1.5 rounded-md bg-sidebar-control-surface/70 px-2 py-1 text-2xs text-sidebar-muted-foreground">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <ProjectIcon
-                projectName={projectBasename(selectedProjectCwd)}
-                className="size-3 shrink-0"
-              />
-              <span className="truncate font-medium text-sidebar-foreground">
-                {projectBasename(selectedProjectCwd)}
+          {/* 3. New thread icon button */}
+          <SidebarHeaderIconButton
+            label="New thread"
+            tooltip={
+              <span className="flex flex-col gap-0.5">
+                <span>New thread</span>
+                <span className="text-muted-foreground">
+                  New thread in another project: Shift+click
+                </span>
               </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedProjectCwd(null)}
-              aria-label="Clear project filter"
-              className="inline-flex size-4 shrink-0 items-center justify-center rounded text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-            >
-              <XIcon className="size-3" />
-            </button>
-          </div>
-        )}
+            }
+            onClick={handleStartNewThread}
+          >
+            <SquarePenIcon />
+          </SidebarHeaderIconButton>
+        </div>
       </div>
 
+      {/* Add Project Dialog */}
       <Dialog open={addProjectOpen} onOpenChange={setAddProjectOpen}>
-        <DialogPopup className="max-w-md">
+        <DialogPopup>
           <DialogHeader>
-            <DialogTitle>Add project directory</DialogTitle>
+            <DialogTitle>Add Project Workspace</DialogTitle>
             <DialogDescription>
-              Enter the local workspace folder path (`cwd`) to add to the project filter or start a
-              new Pi thread in.
+              Enter the local directory path for the project you want to work on with Pi.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <Input
-              value={newProjectPath}
-              onChange={(event) => setNewProjectPath(event.target.value)}
-              placeholder={defaultCwd ?? "/path/to/workspace"}
-              autoFocus
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  handleConfirmAddProject(true);
-                }
+            <form
+              id="add-project-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleConfirmAddProject(true);
               }}
-            />
+              className="flex flex-col gap-3"
+            >
+              <Input
+                autoFocus
+                placeholder="/Users/you/workspace/my-project"
+                value={newProjectPath}
+                onChange={(event) => setNewProjectPath(event.currentTarget.value)}
+              />
+            </form>
           </DialogPanel>
           <DialogFooter>
-            <DialogClose render={<Button variant="outline" size="sm" />}>Cancel</DialogClose>
+            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
             <Button
-              variant="secondary"
-              size="sm"
-              disabled={newProjectPath.trim().length === 0}
+              variant="outline"
+              disabled={!newProjectPath.trim()}
               onClick={() => handleConfirmAddProject(false)}
             >
-              Add project
+              Add Project Only
             </Button>
             <Button
-              size="sm"
-              disabled={newProjectPath.trim().length === 0}
-              onClick={() => handleConfirmAddProject(true)}
+              type="submit"
+              form="add-project-form"
+              disabled={!newProjectPath.trim()}
             >
-              Start thread
+              Add & Start Thread
             </Button>
           </DialogFooter>
         </DialogPopup>

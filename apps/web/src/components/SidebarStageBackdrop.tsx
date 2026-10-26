@@ -1,105 +1,239 @@
 import { useId } from "react";
-import { cn } from "~/lib/utils";
 
-export type SidebarStageBackdropVariant = "dev" | "nightly";
+export type SidebarStageBackdropVariant = "nightly" | "dev";
+
+const STAGE_BACKDROP_VIEW_BOX = "0 0 8192 96";
 
 export function SidebarStageBackdrop({
   variant = "nightly",
-  className,
 }: {
   variant?: SidebarStageBackdropVariant;
-  className?: string;
 }) {
   return (
-    <span
-      aria-hidden="true"
-      className={cn("pointer-events-none absolute inset-0 overflow-hidden", className)}
+    <div
+      aria-hidden
+      className="sidebar-stage-backdrop pointer-events-none absolute inset-x-0 top-0 z-0 h-20 select-none overflow-hidden"
     >
-      <NightlyBackdrop />
-      <span className="absolute inset-0 bg-gradient-to-r from-slate-950/38 via-slate-950/12 to-transparent" />
-      <span className="absolute inset-x-0 bottom-0 h-px bg-white/14" />
-    </span>
+      <StageBackdropArt variant={variant} />
+    </div>
   );
 }
 
-function NightlyBackdrop() {
-  const id = useId().replace(/:/g, "");
-  const skyId = `${id}-nightly-sky`;
-  const glowId = `${id}-nightly-glow`;
-  const duskId = `${id}-nightly-dusk`;
+export function StageBackdropArt({ variant }: { variant: SidebarStageBackdropVariant }) {
+  return variant === "nightly" ? <NightlySkyArt /> : <DevBlueprintArt />;
+}
+
+const NIGHTLY_STARS: ReadonlyArray<{
+  cx: number;
+  cy: number;
+  r: number;
+  opacity: number;
+}> = [
+  { cx: 14, cy: 10, r: 0.6, opacity: 0.85 },
+  { cx: 38, cy: 22, r: 0.4, opacity: 0.55 },
+  { cx: 58, cy: 8, r: 0.5, opacity: 0.7 },
+  { cx: 84, cy: 16, r: 0.4, opacity: 0.5 },
+  { cx: 104, cy: 7, r: 0.6, opacity: 0.8 },
+  { cx: 126, cy: 20, r: 0.4, opacity: 0.55 },
+  { cx: 148, cy: 11, r: 0.5, opacity: 0.7 },
+  { cx: 170, cy: 24, r: 0.4, opacity: 0.5 },
+  { cx: 192, cy: 9, r: 0.6, opacity: 0.8 },
+  { cx: 214, cy: 18, r: 0.4, opacity: 0.55 },
+  { cx: 236, cy: 8, r: 0.5, opacity: 0.7 },
+  { cx: 258, cy: 20, r: 0.45, opacity: 0.6 },
+  { cx: 278, cy: 11, r: 0.55, opacity: 0.75 },
+  { cx: 26, cy: 34, r: 0.4, opacity: 0.45 },
+  { cx: 118, cy: 34, r: 0.4, opacity: 0.45 },
+  { cx: 202, cy: 32, r: 0.4, opacity: 0.5 },
+  { cx: 268, cy: 34, r: 0.4, opacity: 0.45 },
+];
+
+const NIGHTLY_SPARKLES: ReadonlyArray<{ x: number; y: number }> = [
+  { x: 70, y: 28 },
+  { x: 160, y: 36 },
+  { x: 246, y: 26 },
+];
+
+function NightlySkyArt({ compact = false }: { compact?: boolean }) {
+  const idPrefix = useId().replaceAll(":", "");
+  const skyId = `${idPrefix}-stage-night-sky`;
+  const glowId = `${idPrefix}-stage-night-glow`;
+  const cloudId = `${idPrefix}-stage-night-cloud`;
+  const softId = `${idPrefix}-stage-night-soft`;
+  const starsId = `${idPrefix}-stage-night-stars`;
+  const glowsId = `${idPrefix}-stage-night-glows`;
 
   return (
     <svg
-      viewBox="0 0 320 40"
-      preserveAspectRatio="xMidYMid slice"
-      className="size-full [shape-rendering:geometricPrecision]"
+      data-stage-art="nightly"
+      className="h-full w-full"
+      fill="none"
+      preserveAspectRatio="xMinYMin slice"
+      viewBox={compact ? "96 0 8192 96" : STAGE_BACKDROP_VIEW_BOX}
+      xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
-        <linearGradient id={skyId} x1="0" y1="0" x2="320" y2="38" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#070a14" />
-          <stop offset="0.45" stopColor="#0f152a" />
-          <stop offset="0.82" stopColor="#1b1c38" />
-          <stop offset="1" stopColor="#281d3d" />
+        <linearGradient
+          id={skyId}
+          x1="24"
+          y1="0"
+          x2="264"
+          y2="96"
+          gradientUnits="userSpaceOnUse"
+          spreadMethod="reflect"
+        >
+          <stop style={{ stopColor: "var(--stage-night-bottom)" }} />
+          <stop offset="0.5" style={{ stopColor: "var(--stage-night-mid)" }} />
+          <stop offset="1" style={{ stopColor: "var(--stage-night-top)" }} />
         </linearGradient>
         <radialGradient
           id={glowId}
           cx="0"
           cy="0"
           r="1"
-          gradientTransform="translate(274 9) rotate(150) scale(110 36)"
+          gradientTransform="translate(216 18) rotate(137) scale(120 84)"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0" stopColor="#a78bfa" stopOpacity="0.32" />
-          <stop offset="0.55" stopColor="#6366f1" stopOpacity="0.12" />
-          <stop offset="1" stopColor="#6366f1" stopOpacity="0" />
+          <stop style={{ stopColor: "var(--stage-night-glow-highlight)" }} stopOpacity="0.4" />
+          <stop
+            offset="0.5"
+            style={{ stopColor: "var(--stage-night-glow-secondary)" }}
+            stopOpacity="0.16"
+          />
+          <stop offset="1" style={{ stopColor: "var(--stage-night-bottom)" }} stopOpacity="0" />
         </radialGradient>
-        <linearGradient id={duskId} x1="0" y1="22" x2="0" y2="40" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#f59e0b" stopOpacity="0" />
-          <stop offset="1" stopColor="#f59e0b" stopOpacity="0.12" />
+        <linearGradient id={cloudId} x1="0" y1="60" x2="288" y2="96" gradientUnits="userSpaceOnUse">
+          <stop style={{ stopColor: "var(--stage-night-highlight)" }} stopOpacity="0.5" />
+          <stop
+            offset="0.52"
+            style={{ stopColor: "var(--stage-night-secondary)" }}
+            stopOpacity="0.62"
+          />
+          <stop offset="1" style={{ stopColor: "var(--stage-night-tertiary)" }} stopOpacity="0.5" />
         </linearGradient>
+        <filter id={softId} x="-24" y="-24" width="336" height="144" filterUnits="userSpaceOnUse">
+          <feGaussianBlur stdDeviation="4" />
+        </filter>
+        <pattern id={starsId} width="288" height="96" patternUnits="userSpaceOnUse">
+          <g style={{ fill: "var(--stage-night-line)" }}>
+            {NIGHTLY_STARS.map((star) => (
+              <circle
+                key={`${star.cx}-${star.cy}`}
+                cx={star.cx}
+                cy={star.cy}
+                r={star.r}
+                fillOpacity={star.opacity}
+              />
+            ))}
+          </g>
+          <g
+            style={{ stroke: "var(--stage-night-sparkle)" }}
+            strokeLinecap="round"
+            strokeOpacity="0.7"
+            strokeWidth="0.6"
+          >
+            {NIGHTLY_SPARKLES.map((sparkle) => (
+              <g key={`${sparkle.x}-${sparkle.y}`}>
+                <path d={`M${sparkle.x - 1.5} ${sparkle.y}H${sparkle.x + 1.5}`} />
+                <path d={`M${sparkle.x} ${sparkle.y - 1.5}V${sparkle.y + 1.5}`} />
+              </g>
+            ))}
+          </g>
+        </pattern>
+        <pattern id={glowsId} width="640" height="96" patternUnits="userSpaceOnUse">
+          <rect width="640" height="96" fill={`url(#${glowId})`} />
+        </pattern>
       </defs>
 
-      <rect width="320" height="40" fill={`url(#${skyId})`} />
-      <rect width="320" height="40" fill={`url(#${glowId})`} />
-      <rect width="320" height="40" fill={`url(#${duskId})`} />
+      <rect width="100%" height="96" fill={`url(#${skyId})`} />
+      <rect width="100%" height="96" fill={`url(#${glowsId})`} />
+      <rect width="100%" height="96" fill={`url(#${starsId})`} />
 
-      <g fill="#f8fafc">
-        <circle cx="18" cy="10" r="0.8" fillOpacity="0.55" />
-        <circle cx="43" cy="24" r="0.65" fillOpacity="0.35" />
-        <circle cx="67" cy="8" r="1" fillOpacity="0.7" />
-        <circle cx="96" cy="18" r="0.7" fillOpacity="0.45" />
-        <circle cx="118" cy="11" r="0.65" fillOpacity="0.35" />
-        <circle cx="151" cy="7" r="0.95" fillOpacity="0.65" />
-        <circle cx="173" cy="22" r="0.65" fillOpacity="0.4" />
-        <circle cx="198" cy="12" r="1.15" fillOpacity="0.82" />
-        <circle cx="222" cy="26" r="0.7" fillOpacity="0.42" />
-        <circle cx="241" cy="9" r="0.8" fillOpacity="0.6" />
-        <circle cx="301" cy="15" r="0.85" fillOpacity="0.62" />
-        <circle cx="312" cy="27" r="0.65" fillOpacity="0.4" />
+      <g filter={`url(#${softId})`}>
+        <path
+          d="M-12 88C-12 74 0 63 14 63C18 50 30 41 44 41C58 41 70 49 74 62C79 57 86 54 94 54C110 54 123 66 124 82C132 83 138 88 141 96H-12V88Z"
+          fill={`url(#${cloudId})`}
+        />
       </g>
+      <g filter={`url(#${softId})`}>
+        <path
+          d="M150 96C151 84 161 75 173 75C176 64 186 57 198 57C210 57 220 64 223 75C231 75 238 80 241 87C250 87 257 91 260 96H150Z"
+          fill={`url(#${cloudId})`}
+          fillOpacity="0.8"
+        />
+      </g>
+    </svg>
+  );
+}
 
-      <path
-        d="M198 8.8 L198.75 11.25 L201.2 12 L198.75 12.75 L198 15.2 L197.25 12.75 L194.8 12 L197.25 11.25 Z"
-        fill="#e0e7ff"
-        fillOpacity="0.85"
-      />
-      <path
-        d="M67 5.6 L67.45 7.55 L69.4 8 L67.45 8.45 L67 10.4 L66.55 8.45 L64.6 8 L66.55 7.55 Z"
-        fill="#fde68a"
-        fillOpacity="0.75"
-      />
+function DevBlueprintArt({ compact = false }: { compact?: boolean }) {
+  const idPrefix = useId().replaceAll(":", "");
+  const paperId = `${idPrefix}-stage-bp-paper`;
+  const glowId = `${idPrefix}-stage-bp-glow`;
+  const minorGridId = `${idPrefix}-stage-bp-grid-minor`;
+  const majorGridId = `${idPrefix}-stage-bp-grid-major`;
 
-      <path
-        d="M277.5 7.5 A7.5 7.5 0 1 0 286.5 18.2 A6.2 6.2 0 1 1 277.5 7.5 Z"
-        fill="#fef3c7"
-        fillOpacity="0.88"
-      />
+  return (
+    <svg
+      data-stage-art="blueprint"
+      className="h-full w-full"
+      fill="none"
+      preserveAspectRatio="xMinYMin slice"
+      viewBox={compact ? "64 0 8192 96" : STAGE_BACKDROP_VIEW_BOX}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <linearGradient
+          id={paperId}
+          x1="60"
+          y1="0"
+          x2="220"
+          y2="96"
+          gradientUnits="userSpaceOnUse"
+          spreadMethod="reflect"
+        >
+          <stop style={{ stopColor: "var(--stage-art-bottom)" }} />
+          <stop offset="0.5" style={{ stopColor: "var(--stage-art-mid)" }} />
+          <stop offset="1" style={{ stopColor: "var(--stage-art-top)" }} />
+        </linearGradient>
+        <radialGradient
+          id={glowId}
+          cx="0"
+          cy="0"
+          r="1"
+          gradientTransform="translate(216 14) rotate(137) scale(120 84)"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop style={{ stopColor: "var(--stage-art-highlight)" }} stopOpacity="0.4" />
+          <stop
+            offset="0.52"
+            style={{ stopColor: "var(--stage-art-secondary)" }}
+            stopOpacity="0.16"
+          />
+          <stop offset="1" style={{ stopColor: "var(--stage-art-bottom)" }} stopOpacity="0" />
+        </radialGradient>
+        <pattern id={minorGridId} width="8" height="8" patternUnits="userSpaceOnUse">
+          <path
+            d="M8 0H0V8"
+            style={{ stroke: "var(--stage-art-grid-line)" }}
+            strokeOpacity="0.14"
+            strokeWidth="0.5"
+          />
+        </pattern>
+        <pattern id={majorGridId} width="32" height="32" patternUnits="userSpaceOnUse">
+          <path
+            d="M32 0H0V32"
+            style={{ stroke: "var(--stage-art-grid-line)" }}
+            strokeOpacity="0.26"
+            strokeWidth="0.6"
+          />
+        </pattern>
+      </defs>
 
-      <path
-        d="M0 35 Q48 29 98 33 T204 31 T320 33 L320 40 L0 40 Z"
-        fill="#05070f"
-        fillOpacity="0.58"
-      />
+      <rect width="100%" height="96" fill={`url(#${paperId})`} />
+      <rect width="100%" height="96" fill={`url(#${glowId})`} />
+      <rect width="100%" height="96" fill={`url(#${minorGridId})`} />
+      <rect width="100%" height="96" fill={`url(#${majorGridId})`} />
     </svg>
   );
 }

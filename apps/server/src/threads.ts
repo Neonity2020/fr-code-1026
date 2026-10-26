@@ -235,7 +235,11 @@ export class ThreadStore implements PiThreadStorePort {
     return this.#threads.get(threadId);
   }
 
-  createThread(cwd: string, title?: string): ThreadSummary {
+  createThread(
+    cwd: string,
+    title?: string,
+    options?: { model?: string; thinkingLevel?: ThreadSummary["thinkingLevel"] },
+  ): ThreadSummary {
     const resolvedCwd = cwd.trim() || this.#defaultCwd;
     this.#projects.add(resolvedCwd);
     this.#persistProjects();
@@ -247,6 +251,8 @@ export class ThreadStore implements PiThreadStorePort {
       status: "idle",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      ...(options?.model ? { model: options.model } : {}),
+      ...(options?.thinkingLevel !== undefined ? { thinkingLevel: options.thinkingLevel } : {}),
     };
     this.emit(threadId, { type: "thread.created", thread: summary });
     return summary;

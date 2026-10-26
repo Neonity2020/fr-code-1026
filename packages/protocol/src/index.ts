@@ -105,6 +105,32 @@ export type ProjectIconColor =
 
 export type ThreadStatus = "idle" | "running" | "waiting" | "error";
 
+export type PiThinkingLevel =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max";
+
+export interface PiModelInfo {
+  /** Full slug in `provider/modelId` format, e.g. `"minimax/MiniMax-M3.1-Flash"` */
+  slug: string;
+  /** Model ID within the sub-provider, e.g. `"MiniMax-M3.1-Flash"` */
+  id: string;
+  /** Human-readable display name, e.g. `"MiniMax-M3.1-Flash"` */
+  name: string;
+  /** Sub-provider inside pi, e.g. `"minimax"`, `"anthropic"`, `"agnes"` */
+  subProvider: string;
+  /** Whether the model supports reasoning/thinking levels */
+  reasoning: boolean;
+  /** Supported thinking levels for this model */
+  thinkingLevels: PiThinkingLevel[];
+  /** Context window size in tokens */
+  contextWindow?: number;
+}
+
 export interface ThreadSummary {
   id: ThreadId;
   title: string;
@@ -112,6 +138,12 @@ export interface ThreadSummary {
   status: ThreadStatus;
   createdAt: number;
   updatedAt: number;
+  /** 当前线程绑定的 Pi 模型 slug（provider/modelId） */
+  model?: string | null;
+  /** 当前线程的推理思考档位 */
+  thinkingLevel?: PiThinkingLevel | null;
+  /** Git 分支名（默认 main） */
+  branch?: string | null;
   /** 侧栏预览：最近一条可见消息的摘要 */
   latestPreview?: string;
   /** 置顶时间戳（ms），null/undefined 表示未置顶 */
@@ -148,9 +180,21 @@ export type ClientMessage =
   | { kind: "dispatch"; commandId: CommandId; command: Command };
 
 export type Command =
-  | { type: "thread.create"; cwd: string; title?: string }
+  | {
+      type: "thread.create";
+      cwd: string;
+      title?: string;
+      model?: string;
+      thinkingLevel?: PiThinkingLevel | null;
+    }
   | { type: "thread.delete"; threadId: ThreadId }
   | { type: "thread.rename"; threadId: ThreadId; title: string }
+  | {
+      type: "thread.set_model";
+      threadId: ThreadId;
+      model: string;
+      thinkingLevel?: PiThinkingLevel | null;
+    }
   | { type: "thread.pin"; threadId: ThreadId; pinned: boolean }
   | { type: "thread.settle"; threadId: ThreadId; settled: boolean }
   | { type: "thread.snooze"; threadId: ThreadId; snoozedUntil: number | null }
@@ -158,7 +202,13 @@ export type Command =
   | { type: "thread.mark_read"; threadId: ThreadId }
   | { type: "project.add"; cwd: string }
   | { type: "project.remove"; cwd: string }
-  | { type: "message.send"; threadId: ThreadId; text: string }
+  | {
+      type: "message.send";
+      threadId: ThreadId;
+      text: string;
+      model?: string;
+      thinkingLevel?: PiThinkingLevel | null;
+    }
   | { type: "thread.stop"; threadId: ThreadId }
   | {
       type: "approval.respond";
@@ -189,6 +239,9 @@ export interface PiStatus {
   installed: boolean;
   version?: string;
   error?: string;
+  defaultModel?: string;
+  defaultThinkingLevel?: PiThinkingLevel;
+  models?: PiModelInfo[];
 }
 
 export interface ServerConfigResponse {

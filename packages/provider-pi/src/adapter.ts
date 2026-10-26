@@ -9,6 +9,7 @@
 import {
   firstLineTitle,
   type DomainEvent,
+  type PiThinkingLevel,
   type ThreadId,
   type ThreadStatus,
   type ThreadSummary,
@@ -16,7 +17,7 @@ import {
   type TurnItemBase,
   type TurnItemStatus,
 } from "@pi-web/protocol";
-import { PiRpcConnection, type PiRecord } from "./rpc.ts";
+import { PiRpcConnection, parsePiModelSlug, type PiRecord } from "./rpc.ts";
 
 export interface PiThreadStorePort {
   emit(threadId: ThreadId, event: DomainEvent): unknown;
@@ -75,6 +76,8 @@ export class PiThreadRunner {
   #toolArgs = new Map<string, unknown>();
   #pendingApprovals = new Map<string, PendingApproval>();
   #status: ThreadStatus = "idle";
+  #appliedModel: string | null = null;
+  #appliedThinking: PiThinkingLevel | null = null;
 
   constructor(store: PiThreadStorePort, threadId: ThreadId, getCwd: () => string) {
     this.#store = store;
@@ -125,6 +128,8 @@ export class PiThreadRunner {
     });
     conn.on("close", () => {
       this.#conn = undefined;
+      this.#appliedModel = null;
+      this.#appliedThinking = null;
       this.#failOpenItems("pi 进程已退出");
       if (this.#status === "running" || this.#status === "waiting") {
         this.#setStatus("idle");
@@ -470,7 +475,48 @@ export class PiThreadRunner {
     }
   }
 
-  async sendMessage(text: string): Promise<void> {
+  async #syncSelection(
+    conn: PiRpcConnection,
+    modelSlug: string | null | undefined,
+    thinkingLevel: PiThinkingLevel | null | undefined,
+  ): Promise<void> {
+    if (modelSlug && modelSlug !== "default" && modelSlug !== this.#appliedModel) {
+      const parsed = parsePiModelSlug(modelSlug);
+      if (parsed) {
+        await conn.request(
+          { type: "set_model", provider: parsed.provider, modelId: parsed.modelId },
+          10_000,
+        );
+        this.#appliedModel = modelSlug;
+      }
+    }
+    if (thinkingLevel && thinkingLevel !== this.#appliedThinking) {
+      await conn.request({ type: "set_thinking_level", level: thinkingLevel }, 10_000);
+      this.#appliedThinking = thinkingLevel;
+    }
+  }
+
+  async setModel(model: string, thinkingLevel?: PiThinkingLevel | null): Promise<void> {
+    this.#store.updateSummary(this.#threadId, {
+      model,
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+    });
+    if (!this.#conn) return;
+    try {
+      await this.#syncSelection(
+        this.#conn,
+        model,
+        thinkingLevel ?? this.#store.get(this.#threadId)?.summary.thinkingLevel,
+      );
+    } catch (error) {
+      console.error(`[pi-web] setModel failed (thread ${this.#threadId}):`, error);
+    }
+  }
+
+  async sendMessage(
+    text: string,
+    selection?: { model?: string; thinkingLevel?: PiThinkingLevel | null },
+  ): Promise<void> {
     const now = Date.now();
     this.#upsertItem({
       ...base(`ti-${cryptoRandomId()}`, this.#threadId, this.#ordinal++, now),
@@ -482,12 +528,28 @@ export class PiThreadRunner {
     });
     const summary = this.#store.get(this.#threadId)?.summary;
     const defaultTitle = summary ? firstLineTitle(summary.cwd) : undefined;
+    const titlePatch: Partial<ThreadSummary> = {};
     if (summary && (summary.title === "New thread" || summary.title === defaultTitle)) {
-      const title = text.replace(/\s+/g, " ").trim().slice(0, 48) || summary.title;
-      this.#store.updateSummary(this.#threadId, { title });
+      titlePatch.title = text.replace(/\s+/g, " ").trim().slice(0, 48) || summary.title;
     }
+    if (selection?.model) {
+      titlePatch.model = selection.model;
+    }
+    if (selection?.thinkingLevel !== undefined) {
+      titlePatch.thinkingLevel = selection.thinkingLevel;
+    }
+    if (Object.keys(titlePatch).length > 0) {
+      this.#store.updateSummary(this.#threadId, titlePatch);
+    }
+
     try {
       const conn = this.ensureProcess();
+      const latestSummary = this.#store.get(this.#threadId)?.summary;
+      await this.#syncSelection(
+        conn,
+        selection?.model ?? latestSummary?.model,
+        selection?.thinkingLevel ?? latestSummary?.thinkingLevel,
+      );
       this.#setStatus("running");
       conn.send({ type: "prompt", message: text, streamingBehavior: "steer" });
     } catch (error) {

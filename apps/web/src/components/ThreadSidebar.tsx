@@ -8,6 +8,7 @@ import {
   PencilIcon,
   PinIcon,
   PinOffIcon,
+  PlusIcon,
   Trash2Icon,
   Undo2Icon,
 } from "lucide-react";
@@ -22,22 +23,20 @@ import {
 import type { ThreadId, ThreadSummary } from "@pi-web/protocol";
 import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { cn } from "~/lib/utils";
 import { projectBasename } from "../projectIdentity";
 import { resolveSnoozePresets } from "./Sidebar.snooze";
 import { SettingsSidebarNav } from "./sidebar/SettingsSidebarNav";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import {
-  SidebarSearchResultRow,
-  SidebarThreadCardRow,
-  SidebarThreadSlimRow,
+  SidebarThreadRow,
   type SidebarThreadRowCallbacks,
 } from "./sidebar/SidebarThreadRow";
 import { CollapsibleSectionHeader } from "./ui/collapsible-section-header";
 import {
   SidebarContent,
   SidebarGroup,
-  SidebarMenu,
   useSidebar,
 } from "./ui/sidebar";
 
@@ -341,166 +340,184 @@ export function ThreadSidebar() {
   return (
     <>
       <SidebarChromeHeader />
-      <SidebarThreadHeader
-        searchInputRef={searchInputRef}
-        searchQuery={searchQuery}
-        hasSearchQuery={hasSearchQuery}
-        onSearchQueryChange={(value) => {
-          setSearchQuery(value);
-          setSelectedSearchIndex(value.trim().length > 0 ? 0 : null);
-        }}
-        onClearSearch={() => {
-          setSearchQuery("");
-          setSelectedSearchIndex(null);
-          searchInputRef.current?.focus();
-        }}
-        onSearchInputKeyDown={handleSearchInputKeyDown}
-      />
-
-      <SidebarContent className="min-h-0 flex-1 gap-0 px-1.5 py-1">
-        {hasSearchQuery ? (
-          <SidebarGroup className="px-0.5 py-1">
-            {searchResults.length === 0 ? (
-              <div className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
-                No matching threads for "{searchQuery.trim()}"
-              </div>
+      <SidebarContent
+        className="min-h-full"
+        fixedHeader={
+          <SidebarGroup className="z-[1]">
+            <SidebarThreadHeader
+              searchInputRef={searchInputRef}
+              searchQuery={searchQuery}
+              hasSearchQuery={hasSearchQuery}
+              onSearchQueryChange={(value) => {
+                setSearchQuery(value);
+                setSelectedSearchIndex(value.trim().length > 0 ? 0 : null);
+              }}
+              onClearSearch={() => {
+                setSearchQuery("");
+                setSelectedSearchIndex(null);
+                searchInputRef.current?.focus();
+              }}
+              onSearchInputKeyDown={handleSearchInputKeyDown}
+            />
+          </SidebarGroup>
+        }
+      >
+        <SidebarGroup className="flex-1" role="presentation">
+          {hasSearchQuery ? (
+            searchResults.length === 0 ? (
+              <p
+                role="status"
+                className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
+              >
+                No threads found
+              </p>
             ) : (
-              <SidebarMenu className="gap-1" role="listbox" aria-label="Search results">
+              <ul
+                id="sidebar-thread-search-results"
+                role="listbox"
+                aria-label="Thread search results"
+                className="flex flex-col gap-px"
+              >
                 {searchResults.map((thread, index) => (
-                  <SidebarSearchResultRow
+                  <SidebarThreadRow
                     key={thread.id}
                     thread={thread}
-                    query={searchQuery}
-                    isActive={thread.id === activeThreadId}
-                    isKeyboardSelected={selectedSearchIndex === index}
-                    onHover={() => setSelectedSearchIndex(index)}
-                    onSelect={() => handleSelectThread(thread)}
+                    variant="slim"
+                    variantAction={
+                      thread.settledAt != null
+                        ? "unsettle"
+                        : typeof thread.snoozedUntil === "number" &&
+                            thread.snoozedUntil > Date.now()
+                          ? "unsnooze"
+                          : "settle"
+                    }
+                    isActive={thread.id === activeThreadId || selectedSearchIndex === index}
+                    callbacks={rowCallbacks}
                   />
                 ))}
-              </SidebarMenu>
-            )}
-          </SidebarGroup>
-        ) : (
-          <div className="flex min-h-full flex-col">
-            {/* Pinned threads */}
-            {pinnedThreads.length > 0 && (
-              <SidebarGroup className="px-0.5 py-0.5">
-                <SidebarMenu className="gap-0.5">
-                  {pinnedThreads.map((thread) => (
-                    <SidebarThreadCardRow
-                      key={thread.id}
-                      thread={thread}
-                      isActive={thread.id === activeThreadId}
-                      renaming={renamingThreadId === thread.id}
-                      onStartRename={() => setRenamingThreadId(thread.id)}
-                      onEndRename={() => setRenamingThreadId(null)}
-                      callbacks={rowCallbacks}
-                    />
-                  ))}
-                </SidebarMenu>
-              </SidebarGroup>
-            )}
+              </ul>
+            )
+          ) : (
+            <ul role="presentation" className="relative flex flex-1 flex-col gap-px">
+              {/* Pinned threads */}
+              {pinnedThreads.map((thread) => (
+                <SidebarThreadRow
+                  key={thread.id}
+                  thread={thread}
+                  variant="card"
+                  variantAction="settle"
+                  isActive={thread.id === activeThreadId}
+                  isRenaming={renamingThreadId === thread.id}
+                  onCancelRename={() => setRenamingThreadId(null)}
+                  callbacks={rowCallbacks}
+                />
+              ))}
 
-            {/* Active inbox threads */}
-            <SidebarGroup className="px-0.5 py-0.5">
+              {/* Active threads */}
+              {activeThreads.map((thread) => (
+                <SidebarThreadRow
+                  key={thread.id}
+                  thread={thread}
+                  variant="card"
+                  variantAction="settle"
+                  isActive={thread.id === activeThreadId}
+                  isRenaming={renamingThreadId === thread.id}
+                  onCancelRename={() => setRenamingThreadId(null)}
+                  callbacks={rowCallbacks}
+                />
+              ))}
+
               {pinnedThreads.length === 0 &&
               activeThreads.length === 0 &&
-              snoozedThreads.length === 0 ? (
-                <div className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
-                  {settledThreads.length > 0 ? "All threads settled" : "No threads yet"}
-                </div>
-              ) : (
-                <SidebarMenu className="gap-0.5">
-                  {activeThreads.map((thread) => (
-                    <SidebarThreadCardRow
+              snoozedThreads.length === 0 &&
+              settledThreads.length === 0 ? (
+                <li className="list-none px-2 py-6 text-center text-xs text-muted-foreground/60">
+                  No threads yet
+                </li>
+              ) : null}
+
+              {/* Snoozed shelf */}
+              {snoozedThreads.length > 0 ? (
+                <>
+                  <li className="mx-0.5 mt-auto h-8 list-none">
+                    <CollapsibleSectionHeader
+                      expanded={snoozedExpanded}
+                      onClick={() => setSnoozedExpanded((prev) => !prev)}
+                    >
+                      Snoozed{!snoozedExpanded ? ` (${snoozedThreads.length})` : null}
+                    </CollapsibleSectionHeader>
+                  </li>
+                  {(snoozedExpanded
+                    ? snoozedThreads
+                    : snoozedThreads.filter((t) => t.id === activeThreadId)
+                  ).map((thread) => (
+                    <SidebarThreadRow
                       key={thread.id}
                       thread={thread}
+                      variant="slim"
+                      variantAction="unsnooze"
                       isActive={thread.id === activeThreadId}
-                      renaming={renamingThreadId === thread.id}
-                      onStartRename={() => setRenamingThreadId(thread.id)}
-                      onEndRename={() => setRenamingThreadId(null)}
+                      isRenaming={renamingThreadId === thread.id}
+                      onCancelRename={() => setRenamingThreadId(null)}
                       callbacks={rowCallbacks}
                     />
                   ))}
-                </SidebarMenu>
-              )}
-            </SidebarGroup>
+                </>
+              ) : null}
 
-            {/* Snoozed shelf */}
-            {snoozedThreads.length > 0 && (
-              <SidebarGroup className="mt-2 px-0.5 py-0.5">
-                <CollapsibleSectionHeader
-                  expanded={snoozedExpanded}
-                  onClick={() => setSnoozedExpanded((prev) => !prev)}
-                >
-                  Snoozed ({snoozedThreads.length})
-                </CollapsibleSectionHeader>
-                {snoozedExpanded && (
-                  <SidebarMenu className="mt-0.5 gap-0.5">
-                    {snoozedThreads.map((thread) => (
-                      <SidebarThreadSlimRow
-                        key={thread.id}
-                        thread={thread}
-                        shelf="snoozed"
-                        isActive={thread.id === activeThreadId}
-                        renaming={renamingThreadId === thread.id}
-                        onStartRename={() => setRenamingThreadId(thread.id)}
-                        onEndRename={() => setRenamingThreadId(null)}
-                        callbacks={rowCallbacks}
-                      />
-                    ))}
-                  </SidebarMenu>
-                )}
-              </SidebarGroup>
-            )}
-
-            {/* Settled shelf (anchored to bottom via mt-auto, matching t3code) */}
-            {settledThreads.length > 0 && (
-              <SidebarGroup className="mt-auto px-0.5 pt-2 pb-0.5">
-                <CollapsibleSectionHeader
-                  expanded={settledExpanded}
-                  onClick={() => {
-                    setSettledExpanded((prev) => {
-                      const next = !prev;
-                      if (!next) setSettledVisibleCount(SETTLED_TAIL_INITIAL_COUNT);
-                      return next;
-                    });
-                  }}
-                >
-                  Settled ({settledThreads.length})
-                </CollapsibleSectionHeader>
-                {visibleSettledThreads.length > 0 && (
-                  <SidebarMenu className="mt-0.5 gap-0.5">
-                    {visibleSettledThreads.map((thread) => (
-                      <SidebarThreadSlimRow
-                        key={thread.id}
-                        thread={thread}
-                        shelf="settled"
-                        isActive={thread.id === activeThreadId}
-                        renaming={renamingThreadId === thread.id}
-                        onStartRename={() => setRenamingThreadId(thread.id)}
-                        onEndRename={() => setRenamingThreadId(null)}
-                        callbacks={rowCallbacks}
-                      />
-                    ))}
-                    {settledExpanded && hiddenSettledCount > 0 && (
+              {/* Settled shelf (anchored to bottom via mt-auto when snoozed is empty) */}
+              {settledThreads.length > 0 ? (
+                <>
+                  <li
+                    className={cn(
+                      "mx-0.5 h-8 list-none",
+                      snoozedThreads.length === 0 && "mt-auto",
+                    )}
+                  >
+                    <CollapsibleSectionHeader
+                      expanded={settledExpanded}
+                      onClick={() => {
+                        setSettledExpanded((prev) => {
+                          const next = !prev;
+                          if (!next) setSettledVisibleCount(SETTLED_TAIL_INITIAL_COUNT);
+                          return next;
+                        });
+                      }}
+                    >
+                      Settled{!settledExpanded ? ` (${settledThreads.length})` : null}
+                    </CollapsibleSectionHeader>
+                  </li>
+                  {visibleSettledThreads.map((thread) => (
+                    <SidebarThreadRow
+                      key={thread.id}
+                      thread={thread}
+                      variant="slim"
+                      variantAction="unsettle"
+                      isActive={thread.id === activeThreadId}
+                      isRenaming={renamingThreadId === thread.id}
+                      onCancelRename={() => setRenamingThreadId(null)}
+                      callbacks={rowCallbacks}
+                    />
+                  ))}
+                  {settledExpanded && hiddenSettledCount > 0 ? (
+                    <li className="list-none">
                       <button
                         type="button"
                         onClick={() =>
                           setSettledVisibleCount((count) => count + SETTLED_TAIL_PAGE_COUNT)
                         }
-                        className="mt-0.5 flex h-7 w-full items-center justify-center rounded-md px-2 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                        className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                       >
-                        Show {Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)} more (
-                        {hiddenSettledCount} remaining)
+                        <PlusIcon aria-hidden className="size-4 shrink-0" />
+                        Show {Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)} more
                       </button>
-                    )}
-                  </SidebarMenu>
-                )}
-              </SidebarGroup>
-            )}
-          </div>
-        )}
+                    </li>
+                  ) : null}
+                </>
+              ) : null}
+            </ul>
+          )}
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarChromeFooter />

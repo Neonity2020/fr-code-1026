@@ -20,6 +20,7 @@ import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { projectBasename } from "../../projectIdentity";
 import { SETTINGS_SECTION_LABEL_BY_ID } from "../sidebar/SettingsSidebarNav";
+import { PiModelPicker, PiThinkingPicker } from "../chat/PiModelPicker";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { useSidebarVisibility } from "../ui/sidebar";
@@ -192,8 +193,27 @@ export function SettingsView() {
   const projects = useAppStore((state) => state.projects);
   const threads = useAppStore((state) => state.threads);
   const piStatus = useAppStore((state) => state.piStatus);
+  const selectedModel = useAppStore((state) => state.selectedModel);
+  const selectedThinkingLevel = useAppStore((state) => state.selectedThinkingLevel);
+  const setSelectedModel = useAppStore((state) => state.setSelectedModel);
   const defaultCwd = useAppStore((state) => state.defaultCwd);
   const patchThreadSummary = useAppStore((state) => state.patchThreadSummary);
+
+  const models = useMemo(() => piStatus?.models ?? [], [piStatus?.models]);
+  const effectiveDefaultModel =
+    selectedModel ?? piStatus?.defaultModel ?? models[0]?.slug ?? null;
+  const activeDefaultModelInfo = useMemo(() => {
+    if (!effectiveDefaultModel) return models[0] ?? null;
+    return (
+      models.find(
+        (m) =>
+          m.slug.toLowerCase() === effectiveDefaultModel.toLowerCase() ||
+          m.id === effectiveDefaultModel,
+      ) ??
+      models[0] ??
+      null
+    );
+  }, [effectiveDefaultModel, models]);
 
   const [settings, setSettings] = useLocalStorage<PiSettingsState>(
     PI_SETTINGS_STORAGE_KEY,
@@ -306,29 +326,37 @@ export function SettingsView() {
                   description="Default model for new threads. Projects can override it."
                   control={
                     <div className="flex items-center gap-2">
-                      <SettingsSelect
-                        ariaLabel="Default model"
-                        value={settings.defaultModel}
-                        onChange={(v) => updateSetting("defaultModel", v)}
-                        prefixIcon={<SparklesIcon className="size-3.5 text-amber-500" />}
-                        options={[
-                          { value: "Claude Opus 4.6", label: "Claude Opus 4.6" },
-                          { value: "Claude Sonnet 4.6", label: "Claude Sonnet 4.6" },
-                          { value: "GPT-5.4", label: "GPT-5.4" },
-                          { value: "Gemini 2.5 Pro", label: "Gemini 2.5 Pro" },
-                        ]}
+                      <PiModelPicker
+                        models={models}
+                        selectedModelSlug={effectiveDefaultModel}
+                        triggerVariant="settings"
+                        onSelectModel={(slug, info) => {
+                          const nextThinking =
+                            info && info.thinkingLevels.length > 0
+                              ? selectedThinkingLevel &&
+                                info.thinkingLevels.includes(selectedThinkingLevel)
+                                ? selectedThinkingLevel
+                                : info.thinkingLevels.includes("medium")
+                                  ? "medium"
+                                  : (info.thinkingLevels[0] ?? null)
+                              : "off";
+                          setSelectedModel(slug, nextThinking);
+                          updateSetting("defaultModel", slug);
+                        }}
                       />
-                      <SettingsSelect
-                        ariaLabel="Default reasoning effort"
-                        value={settings.defaultEffort}
-                        onChange={(v) => updateSetting("defaultEffort", v)}
-                        options={[
-                          { value: "Max", label: "Max" },
-                          { value: "High", label: "High" },
-                          { value: "Medium", label: "Medium" },
-                          { value: "Fast", label: "Fast" },
-                        ]}
-                      />
+                      {activeDefaultModelInfo && activeDefaultModelInfo.thinkingLevels.length > 0 ? (
+                        <PiThinkingPicker
+                          levels={activeDefaultModelInfo.thinkingLevels}
+                          selectedLevel={selectedThinkingLevel ?? piStatus?.defaultThinkingLevel ?? null}
+                          triggerVariant="settings"
+                          onSelectLevel={(level) => {
+                            if (effectiveDefaultModel) {
+                              setSelectedModel(effectiveDefaultModel, level);
+                            }
+                            updateSetting("defaultEffort", level);
+                          }}
+                        />
+                      ) : null}
                     </div>
                   }
                 />
@@ -354,7 +382,7 @@ export function SettingsView() {
                 <SettingsRow
                   id="setting-workspace"
                   title="Workspace"
-                  description="Where new threads start. Projects and their t3.json can override it."
+                  description="Where new threads start. Projects and their fr.json can override it."
                   control={
                     <SettingsSelect
                       ariaLabel="Default workspace"
@@ -371,7 +399,7 @@ export function SettingsView() {
                 <SettingsRow
                   id="setting-submodules"
                   title="Submodules"
-                  description="How new worktrees populate git submodules. Projects and their t3.json can override it."
+                  description="How new worktrees populate git submodules. Projects and their fr.json can override it."
                   control={
                     <SettingsSelect
                       ariaLabel="Default submodules"
@@ -549,7 +577,7 @@ export function SettingsView() {
               <SettingsRow
                 id="setting-theme"
                 title="Theme"
-                description="Choose how T3 Code looks on this device."
+                description="Choose how FR Code looks on this device."
                 control={
                   <div className="inline-flex items-center rounded-lg border border-border/60 bg-background/60 p-0.5">
                     {(
@@ -669,7 +697,7 @@ export function SettingsView() {
               <SettingsRow
                 id="setting-provider-pi"
                 title="Pi Coding Agent CLI"
-                description="pi-web runs exclusively on the Pi Coding Agent harness (@earendil-works/pi-coding-agent)."
+                description="FR Code runs exclusively on the Pi Coding Agent harness (@earendil-works/pi-coding-agent)."
                 control={
                   <div className="flex items-center gap-2 text-xs">
                     {piStatus?.installed ? (
@@ -771,7 +799,7 @@ export function SettingsView() {
             <SettingsSection title="Storage">
               <SettingsRow
                 title="Tracked projects"
-                description="Projects registered in the local pi-web server store."
+                description="Projects registered in the local FR Code server store."
                 control={<span className="font-mono text-xs">{projects.length}</span>}
               />
               <SettingsRow
@@ -786,7 +814,7 @@ export function SettingsView() {
           {activeSettingsSection === "connections" && (
             <SettingsSection title="Connections">
               <SettingsRow
-                title="Local pi-web WebSocket server"
+                title="Local FR Code WebSocket server"
                 description="Direct WebSocket connection to `/ws` on the current origin."
                 control={
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">

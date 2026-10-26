@@ -7,9 +7,41 @@
  */
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
-import type { PiStatus } from "@pi-web/protocol";
+import type { PiModelInfo, PiStatus, PiThinkingLevel } from "@pi-web/protocol";
 
 export type PiRecord = Record<string, unknown>;
+
+const PI_THINKING_LEVELS: ReadonlyArray<PiThinkingLevel> = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+export function parsePiModelSlug(slug: string): { provider: string; modelId: string } | null {
+  const separator = slug.indexOf("/");
+  if (separator <= 0 || separator === slug.length - 1) return null;
+  return { provider: slug.slice(0, separator), modelId: slug.slice(separator + 1) };
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function supportedPiThinkingLevelsFromModel(model: unknown): PiThinkingLevel[] {
+  if (!isObjectRecord(model) || model["reasoning"] !== true) return [];
+  const rawMap = model["thinkingLevelMap"];
+  const thinkingLevelMap = isObjectRecord(rawMap) ? rawMap : undefined;
+  return PI_THINKING_LEVELS.filter((level) => {
+    const mapped = thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
+}
 
 export interface PiRpcSpawnOptions {
   readonly command: string;
@@ -46,10 +78,14 @@ export class PiRpcConnection extends EventEmitter {
     this.#child.on("exit", (code, signal) => this.#onClose(new Error(`pi exited (${code ?? signal})`)));
   }
 
-  static launch(cwd: string, env: NodeJS.ProcessEnv = process.env): PiRpcConnection {
+  static launch(
+    cwd: string,
+    env: NodeJS.ProcessEnv = process.env,
+    extraArgs: ReadonlyArray<string> = [],
+  ): PiRpcConnection {
     return new PiRpcConnection({
       command: process.env.PI_BIN ?? "pi",
-      args: ["--mode", "rpc"],
+      args: ["--mode", "rpc", ...extraArgs],
       cwd,
       env,
     });
@@ -147,16 +183,107 @@ export class PiRpcConnection extends EventEmitter {
   }
 }
 
+export async function discoverPiModels(cwd = process.cwd()): Promise<{
+  defaultModel?: string;
+  defaultThinkingLevel?: PiThinkingLevel;
+  models: PiModelInfo[];
+}> {
+  const conn = PiRpcConnection.launch(cwd, process.env, ["--no-session"]);
+  try {
+    const [stateRes, modelsRes] = await Promise.all([
+      conn.request({ type: "get_state" }, 10_000),
+      conn.request({ type: "get_available_models" }, 10_000),
+    ]);
+
+    const stateData = isObjectRecord(stateRes["data"]) ? stateRes["data"] : {};
+    const activeModel = isObjectRecord(stateData["model"]) ? stateData["model"] : undefined;
+    const activeProvider =
+      activeModel && typeof activeModel["provider"] === "string"
+        ? activeModel["provider"]
+        : undefined;
+    const activeId =
+      activeModel && typeof activeModel["id"] === "string" ? activeModel["id"] : undefined;
+    const defaultModel =
+      activeProvider && activeId ? `${activeProvider}/${activeId}` : undefined;
+    const rawThinking = stateData["thinkingLevel"];
+    const defaultThinkingLevel =
+      typeof rawThinking === "string" &&
+      (PI_THINKING_LEVELS as ReadonlyArray<string>).includes(rawThinking)
+        ? (rawThinking as PiThinkingLevel)
+        : undefined;
+
+    const modelsData = isObjectRecord(modelsRes["data"]) ? modelsRes["data"] : {};
+    const rawModels = Array.isArray(modelsData["models"]) ? modelsData["models"] : [];
+    const seen = new Set<string>();
+    const models: PiModelInfo[] = [];
+
+    for (const entry of rawModels) {
+      if (!isObjectRecord(entry)) continue;
+      const provider = typeof entry["provider"] === "string" ? entry["provider"].trim() : "";
+      const id = typeof entry["id"] === "string" ? entry["id"].trim() : "";
+      if (!provider || !id) continue;
+      const slug = `${provider}/${id}`;
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      const name =
+        typeof entry["name"] === "string" && entry["name"].trim().length > 0
+          ? entry["name"].trim()
+          : id;
+      const reasoning = entry["reasoning"] === true;
+      const thinkingLevels = supportedPiThinkingLevelsFromModel(entry);
+      const contextWindow =
+        typeof entry["contextWindow"] === "number" && Number.isFinite(entry["contextWindow"])
+          ? entry["contextWindow"]
+          : undefined;
+      models.push({
+        slug,
+        id,
+        name,
+        subProvider: provider,
+        reasoning,
+        thinkingLevels,
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
+      });
+    }
+
+    return {
+      ...(defaultModel ? { defaultModel } : {}),
+      ...(defaultThinkingLevel ? { defaultThinkingLevel } : {}),
+      models,
+    };
+  } finally {
+    conn.terminate();
+  }
+}
+
 let cachedPiStatus: PiStatus | undefined;
 
-export function checkPiStatus(piBin = process.env.PI_BIN ?? "pi"): Promise<PiStatus> {
-  if (cachedPiStatus) return Promise.resolve(cachedPiStatus);
-  return new Promise((resolve) => {
+export async function checkPiStatus(piBin = process.env.PI_BIN ?? "pi"): Promise<PiStatus> {
+  if (cachedPiStatus) return cachedPiStatus;
+  const versionStatus = await new Promise<PiStatus>((resolve) => {
     execFile(piBin, ["--version"], { timeout: 5_000 }, (error, stdout) => {
-      cachedPiStatus = error
-        ? { installed: false, error: error.message }
-        : { installed: true, version: stdout.trim().split("\n")[0] };
-      resolve(cachedPiStatus);
+      resolve(
+        error
+          ? { installed: false, error: error.message }
+          : { installed: true, version: stdout.trim().split("\n")[0] },
+      );
     });
   });
+
+  if (!versionStatus.installed) {
+    cachedPiStatus = versionStatus;
+    return cachedPiStatus;
+  }
+
+  try {
+    const discovered = await discoverPiModels();
+    cachedPiStatus = {
+      ...versionStatus,
+      ...discovered,
+    };
+  } catch {
+    cachedPiStatus = versionStatus;
+  }
+
+  return cachedPiStatus;
 }

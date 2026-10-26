@@ -3,16 +3,15 @@ import {
   AlarmClockOffIcon,
   CheckIcon,
   CircleAlertIcon,
-  CircleCheckIcon,
   CircleDashedIcon,
-  GitBranchIcon,
+  ClockIcon,
   PinIcon,
   PinOffIcon,
   ShieldQuestionIcon,
   Undo2Icon,
-  XIcon,
 } from "lucide-react";
 import {
+  memo,
   useEffect,
   useRef,
   useState,
@@ -22,6 +21,7 @@ import {
 import type { ThreadSummary } from "@pi-web/protocol";
 import { cn } from "~/lib/utils";
 import { projectBasename } from "../../projectIdentity";
+import { PiGlyph } from "../chat/PiModelPicker";
 import { ProjectIcon } from "../ProjectMonogram";
 import {
   formatCompactRelativeTime,
@@ -29,45 +29,8 @@ import {
   formatWorkingDuration,
   resolveSnoozePresets,
 } from "../Sidebar.snooze";
-import { InlineButton } from "../ui/button";
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
-import { MiddleTruncate } from "../ui/middle-truncate";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-
-export function PiProviderLogo({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="165.29 165.29 469.43 469.43"
-      aria-hidden="true"
-      className={cn("size-3.5 shrink-0 fill-[#0F0F0F] dark:fill-[#F5F5F5]", className)}
-    >
-      <path
-        d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-        fillRule="evenodd"
-      />
-      <path d="M517.36 400H634.72V634.72H517.36Z" />
-    </svg>
-  );
-}
-
-function useClockTick(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(id);
-  }, [intervalMs]);
-  return now;
-}
-
-function WorkingTimerLabel({ startedAtMs }: { startedAtMs: number }) {
-  const now = useClockTick(1000);
-  return <>Working ({formatWorkingDuration(startedAtMs, now)})</>;
-}
-
-function RelativeTimeText({ timestampMs }: { timestampMs: number }) {
-  const now = useClockTick(30_000);
-  return <>{formatCompactRelativeTime(timestampMs, now)}</>;
-}
 
 export interface SidebarThreadRowCallbacks {
   onSelect: (thread: ThreadSummary) => void;
@@ -79,534 +42,470 @@ export interface SidebarThreadRowCallbacks {
   onRename: (thread: ThreadSummary, newTitle: string) => void;
 }
 
-export function SidebarThreadCardRow({
+function WorkingDurationLabel({ startedMs }: { startedMs: number }) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return <span className="tabular-nums">{formatWorkingDuration(startedMs, nowMs)}</span>;
+}
+
+export const SidebarThreadRow = memo(function SidebarThreadRow({
   thread,
   isActive,
-  renaming,
-  onStartRename,
-  onEndRename,
+  variant = "card",
+  variantAction = "settle",
+  isRenaming = false,
+  onCancelRename,
   callbacks,
 }: {
   thread: ThreadSummary;
   isActive: boolean;
-  renaming: boolean;
-  onStartRename: () => void;
-  onEndRename: () => void;
+  variant?: "card" | "slim";
+  variantAction?: "settle" | "unsettle" | "unsnooze";
+  isRenaming?: boolean;
+  onCancelRename?: () => void;
   callbacks: SidebarThreadRowCallbacks;
 }) {
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(thread.title);
-  const renameInputRef = useRef<HTMLInputElement | null>(null);
-  const renameCancelledRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const renameCommittedRef = useRef(false);
 
+  const isPinned = Boolean(thread.pinnedAt);
+  const isSnoozed = typeof thread.snoozedUntil === "number" && thread.snoozedUntil > Date.now();
+  const isWoke = Boolean(thread.wokeAt) && !isSnoozed;
   const projectName = projectBasename(thread.cwd);
-  const isPinned = thread.pinnedAt != null;
-  const isWoke = thread.wokeAt != null && thread.status === "idle";
-  const snoozePresets = resolveSnoozePresets();
 
   useEffect(() => {
-    if (renaming) {
+    if (isRenaming) {
       setDraftTitle(thread.title);
-      renameCancelledRef.current = false;
+      renameCommittedRef.current = false;
       requestAnimationFrame(() => {
-        renameInputRef.current?.focus();
-        renameInputRef.current?.select();
+        inputRef.current?.focus();
+        inputRef.current?.select();
       });
     }
-  }, [renaming, thread.title]);
+  }, [isRenaming, thread.title]);
 
   const commitRename = () => {
-    if (renameCancelledRef.current) return;
+    if (renameCommittedRef.current) return;
+    renameCommittedRef.current = true;
     const trimmed = draftTitle.trim();
-    onEndRename();
-    if (trimmed.length > 0 && trimmed !== thread.title) {
+    if (trimmed && trimmed !== thread.title) {
       callbacks.onRename(thread, trimmed);
+    }
+    onCancelRename?.();
+  };
+
+  const handleRenameKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRename();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      renameCommittedRef.current = true;
+      setDraftTitle(thread.title);
+      onCancelRename?.();
     }
   };
 
+  const handleRowClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (isRenaming) return;
+    if ((event.target as HTMLElement).closest("[data-row-action]")) return;
+    callbacks.onSelect(thread);
+  };
+
+  const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    callbacks.onContextMenu(thread, { x: event.clientX, y: event.clientY });
+  };
+
+  const rowSurfaceClassName = cn(
+    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    variantAction === "unsettle" &&
+      !isActive &&
+      "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70",
+    isActive
+      ? "bg-sidebar-row-active text-sidebar-foreground light:shadow-xs light:ring-1 light:ring-inset light:ring-sidebar-border/70"
+      : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
+  );
+
+  const titleNode = isRenaming ? (
+    <input
+      ref={inputRef}
+      value={draftTitle}
+      aria-label="Thread title"
+      onChange={(event) => setDraftTitle(event.currentTarget.value)}
+      onBlur={commitRename}
+      onKeyDown={handleRenameKeyDown}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm font-medium text-card-foreground outline-none focus:border-foreground"
+    />
+  ) : (
+    <span
+      className={cn(
+        "min-w-0 flex-1 text-start text-sm transition-opacity",
+        variant === "card"
+          ? cn(
+              "truncate font-medium",
+              thread.unread || isWoke ? "text-foreground" : "text-foreground/90",
+            )
+          : cn(
+              "truncate font-normal group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
+              isActive || isWoke ? "text-foreground" : "text-secondary-label/70",
+            ),
+      )}
+    >
+      {thread.title}
+    </span>
+  );
+
+  const pinIndicator = isPinned ? (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            data-row-action
+            aria-label="Unpin thread"
+            onClick={(event) => {
+              event.stopPropagation();
+              callbacks.onPinToggle(thread, false);
+            }}
+            className="group/unpin inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          />
+        }
+      >
+        <PinIcon
+          aria-hidden
+          className="size-3 shrink-0 group-hover/unpin:hidden group-focus-visible/unpin:hidden"
+        />
+        <PinOffIcon
+          aria-hidden
+          className="hidden size-3 shrink-0 group-hover/unpin:block group-focus-visible/unpin:block"
+        />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Unpin thread</TooltipPopup>
+    </Tooltip>
+  ) : null;
+
+  if (variant === "slim") {
+    return (
+      <li
+        data-thread-item={thread.id}
+        className="list-none [content-visibility:auto] [contain-intrinsic-size:auto_36px]"
+      >
+        <div
+          role="button"
+          tabIndex={0}
+          aria-current={isActive ? "page" : undefined}
+          data-testid="sidebar-row-slim"
+          className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
+          onClick={handleRowClick}
+          onContextMenu={handleContextMenu}
+          onKeyDown={(event) => {
+            if (isRenaming) return;
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              callbacks.onSelect(thread);
+            }
+          }}
+        >
+          <span
+            className={cn(
+              "flex shrink-0 items-center transition-opacity",
+              (!isActive || variantAction === "unsettle") &&
+                "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+            )}
+          >
+            <ProjectIcon projectName={projectName} className="size-4" />
+          </span>
+          {titleNode}
+          {pinIndicator}
+          <span className="relative ml-auto flex h-6 min-w-8 shrink-0 items-center justify-end">
+            <span
+              className={cn(
+                "inline-flex justify-end tabular-nums text-secondary-label transition-opacity",
+                !isWoke && "group-any-hover/sidebar-row:opacity-0",
+              )}
+            >
+              {variantAction === "unsnooze" && typeof thread.snoozedUntil === "number" ? (
+                <span className="text-xs text-sky-400 tabular-nums">
+                  {formatSnoozeWakeLabel(thread.snoozedUntil)}
+                </span>
+              ) : isWoke ? (
+                <button
+                  type="button"
+                  data-row-action
+                  aria-label="Dismiss Woke notification"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    callbacks.onAcknowledgeWoke(thread);
+                  }}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-amber-400 outline-none hover:underline"
+                >
+                  <AlarmClockIcon aria-hidden className="size-3" />
+                  <span>Woke</span>
+                </button>
+              ) : (
+                <span className="text-xs">
+                  {formatCompactRelativeTime(thread.settledAt ?? thread.updatedAt)}
+                </span>
+              )}
+            </span>
+
+            {variantAction === "unsnooze" ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      data-row-action
+                      aria-label="Wake thread now"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        callbacks.onSnooze(thread, null);
+                      }}
+                      className="pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100"
+                    >
+                      <AlarmClockOffIcon className="mb-px size-3" />
+                    </button>
+                  }
+                />
+                <TooltipPopup side="top">Wake thread now</TooltipPopup>
+              </Tooltip>
+            ) : variantAction === "unsettle" ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      data-row-action
+                      aria-label="Un-settle thread"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        callbacks.onSettleToggle(thread, false);
+                      }}
+                      className="pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100"
+                    >
+                      <Undo2Icon className="mb-px size-3.5" />
+                    </button>
+                  }
+                />
+                <TooltipPopup side="top">Un-settle thread</TooltipPopup>
+              </Tooltip>
+            ) : (
+              <button
+                type="button"
+                data-row-action
+                aria-label="Settle thread"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  callbacks.onSettleToggle(thread, true);
+                }}
+                className="pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100"
+              >
+                <CheckIcon className="size-3" />
+              </button>
+            )}
+          </span>
+        </div>
+      </li>
+    );
+  }
+
   return (
-    <div data-thread-item className="group/sidebar-row relative">
+    <li
+      data-thread-item={thread.id}
+      className="list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]"
+    >
       <div
         role="button"
         tabIndex={0}
-        data-testid={`thread-row-${thread.id}`}
-        onClick={() => {
-          if (!renaming) callbacks.onSelect(thread);
-        }}
-        onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
-          if (renaming) return;
+        aria-current={isActive ? "page" : undefined}
+        data-testid="sidebar-row-card"
+        className={rowSurfaceClassName}
+        onClick={handleRowClick}
+        onContextMenu={handleContextMenu}
+        onKeyDown={(event) => {
+          if (isRenaming) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             callbacks.onSelect(thread);
           }
         }}
-        onContextMenu={(event: ReactMouseEvent<HTMLDivElement>) => {
-          event.preventDefault();
-          callbacks.onContextMenu(thread, { x: event.clientX, y: event.clientY });
-        }}
-        className={cn(
-          "relative flex h-[4.875rem] w-full cursor-pointer flex-col justify-between rounded-lg border px-2.5 py-2 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden",
-          isActive
-            ? "border-sidebar-border/80 bg-sidebar-row-selected font-medium text-sidebar-accent-foreground dark:border-transparent"
-            : "border-transparent bg-transparent text-sidebar-foreground/90 any-hover:bg-sidebar-row-hover any-hover:text-sidebar-accent-foreground",
-        )}
       >
-        {/* Row 1: Project icon + Pin + Project name | Status / Hover actions */}
-        <div className="flex h-5 w-full items-center justify-between gap-1.5 text-xs">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sidebar-muted-foreground">
-            <ProjectIcon projectName={projectName} className="size-3.5 shrink-0" />
-            {isPinned && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <InlineButton
-                      aria-label="Unpin thread"
-                      className="group/pin-btn relative inline-flex size-3.5 shrink-0 items-center justify-center rounded-xs text-sidebar-muted-foreground transition-colors hover:text-sidebar-foreground"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        event.preventDefault();
-                        callbacks.onPinToggle(thread, false);
-                      }}
-                    >
-                      <PinIcon className="size-3 rotate-45 transition-opacity group-hover/pin-btn:opacity-0" />
-                      <PinOffIcon className="absolute size-3 opacity-0 transition-opacity group-hover/pin-btn:opacity-100" />
-                    </InlineButton>
-                  }
-                />
-                <TooltipPopup side="top">Unpin thread</TooltipPopup>
-              </Tooltip>
-            )}
-            <MiddleTruncate value={projectName} className="min-w-0 flex-1 font-normal" />
-          </div>
+        <div className="relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)">
+          {/* Line 1: Project icon + Project name + Status / Hover actions */}
+          <div className="flex h-5 min-w-0 items-center gap-1.5">
+            <ProjectIcon projectName={projectName} className="size-4 shrink-0" />
+            {pinIndicator}
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-secondary-label">
+              {projectName}
+            </span>
 
-          <div className="group/sidebar-status-slot relative flex shrink-0 items-center gap-1">
-            {/* Status display (fades out on row hover) */}
-            <div
-              className={cn(
-                "flex items-center gap-1 text-2xs transition-opacity duration-150",
-                "group-any-hover/sidebar-row:pointer-events-none group-any-hover/sidebar-row:opacity-0",
-                snoozeMenuOpen && "pointer-events-none opacity-0",
-              )}
-            >
-              {thread.status === "running" ? (
-                <span className="inline-flex items-center gap-1 text-info">
-                  <CircleDashedIcon className="size-3 shrink-0 animate-spin" />
-                  <span>
-                    <WorkingTimerLabel startedAtMs={thread.updatedAt} />
+            <span className="group/sidebar-status-slot relative ml-auto flex h-5 min-w-8 shrink-0 items-stretch justify-end text-xs">
+              <span
+                className={cn(
+                  isWoke
+                    ? "pointer-events-auto"
+                    : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0",
+                  "flex items-center self-center justify-self-end tabular-nums text-secondary-label",
+                  snoozeMenuOpen && "pointer-events-none absolute right-0 opacity-0",
+                )}
+              >
+                {thread.status === "running" ? (
+                  <span className="inline-flex items-center gap-1 font-medium text-sky-500">
+                    <CircleDashedIcon aria-hidden className="size-4 shrink-0 animate-spin" />
+                    <span>Working</span>
+                    <WorkingDurationLabel startedMs={thread.updatedAt} />
                   </span>
-                </span>
-              ) : thread.status === "waiting" ? (
-                <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-300/90">
-                  <ShieldQuestionIcon className="size-3 shrink-0" />
-                  <span>Approval</span>
-                </span>
-              ) : thread.status === "error" ? (
-                <span className="inline-flex items-center gap-1 text-destructive">
-                  <CircleAlertIcon className="size-3 shrink-0" />
-                  <span>Failed</span>
-                </span>
-              ) : isWoke ? (
-                <span className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400">
-                  <AlarmClockIcon className="size-3 shrink-0" />
-                  <span>Woke</span>
-                </span>
-              ) : thread.unread ? (
-                <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-300/90">
-                  <CircleCheckIcon className="size-3 shrink-0" />
-                  <span>Done</span>
-                </span>
-              ) : (
-                <span className="font-mono text-sidebar-muted-foreground/80 tabular-nums">
-                  <RelativeTimeText timestampMs={thread.updatedAt} />
-                </span>
-              )}
-            </div>
+                ) : thread.status === "waiting" ? (
+                  <span className="inline-flex items-center gap-1 font-medium text-amber-500">
+                    <ShieldQuestionIcon aria-hidden className="size-4 shrink-0" />
+                    <span>Approval</span>
+                  </span>
+                ) : thread.status === "error" ? (
+                  <span className="inline-flex items-center gap-1 font-medium text-destructive">
+                    <CircleAlertIcon aria-hidden className="size-4 shrink-0" />
+                    <span>Failed</span>
+                  </span>
+                ) : isWoke ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          data-row-action
+                          aria-label="Dismiss Woke notification"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            callbacks.onAcknowledgeWoke(thread);
+                          }}
+                          className="inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium text-amber-400 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                        >
+                          <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
+                          <span role="status">Woke</span>
+                        </button>
+                      }
+                    />
+                    <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
+                  </Tooltip>
+                ) : (
+                  <span>{formatCompactRelativeTime(thread.updatedAt)}</span>
+                )}
+              </span>
 
-            {/* Hover actions: Dismiss Woke + Snooze Menu + Settle button */}
-            <div
-              className={cn(
-                "pointer-events-none absolute top-1/2 right-0 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-150",
-                "group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100",
-                snoozeMenuOpen && "pointer-events-auto opacity-100",
-              )}
-              onClick={(event) => event.stopPropagation()}
-            >
-              {isWoke && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <InlineButton
-                        aria-label="Dismiss Woke notification"
-                        className="inline-flex size-5 items-center justify-center rounded text-sky-600 transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground dark:text-sky-400"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          callbacks.onAcknowledgeWoke(thread);
-                        }}
-                      >
-                        <XIcon className="size-3" />
-                      </InlineButton>
-                    }
-                  />
-                  <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
-                </Tooltip>
-              )}
-
-              {thread.status !== "running" && thread.status !== "waiting" && (
+              {/* Hover actions: Snooze + Settle */}
+              <span
+                data-row-action
+                className={cn(
+                  "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
+                  snoozeMenuOpen && "pointer-events-auto static opacity-100",
+                )}
+              >
                 <Menu open={snoozeMenuOpen} onOpenChange={setSnoozeMenuOpen}>
                   <Tooltip>
                     <TooltipTrigger
                       render={
                         <MenuTrigger
                           render={
-                            <InlineButton
+                            <button
+                              type="button"
                               aria-label="Snooze thread"
-                              className="inline-flex size-5 items-center justify-center rounded text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                               onClick={(event) => event.stopPropagation()}
-                            >
-                              <AlarmClockIcon className="size-3" />
-                            </InlineButton>
+                              className="inline-flex cursor-pointer items-center rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                            />
                           }
-                        />
+                        >
+                          <ClockIcon className="size-3.5" />
+                        </MenuTrigger>
                       }
                     />
-                    <TooltipPopup side="top">Snooze</TooltipPopup>
+                    <TooltipPopup side="top">Snooze thread</TooltipPopup>
                   </Tooltip>
-                  <MenuPopup align="end" side="bottom" className="w-56">
-                    {snoozePresets.map((preset) => (
+                  <MenuPopup align="end" sideOffset={4} className="w-56">
+                    <div className="px-2 py-1 text-2xs font-medium text-muted-foreground">
+                      Snooze until
+                    </div>
+                    {resolveSnoozePresets().map((preset) => (
                       <MenuItem
                         key={preset.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSnoozeMenuOpen(false);
+                        onClick={() => {
                           callbacks.onSnooze(thread, preset.untilMs);
+                          setSnoozeMenuOpen(false);
                         }}
                       >
-                        {preset.label}
-                        <MenuShortcut>{preset.detail}</MenuShortcut>
+                        <ClockIcon className="size-3.5 text-muted-foreground" />
+                        <span className="flex-1">{preset.label}</span>
+                        <span className="text-2xs text-muted-foreground tabular-nums">
+                          {preset.detail}
+                        </span>
                       </MenuItem>
                     ))}
+                    {isSnoozed ? (
+                      <>
+                        <MenuSeparator />
+                        <MenuItem
+                          onClick={() => {
+                            callbacks.onSnooze(thread, null);
+                            setSnoozeMenuOpen(false);
+                          }}
+                        >
+                          <AlarmClockOffIcon className="size-3.5" />
+                          <span>Wake now</span>
+                        </MenuItem>
+                      </>
+                    ) : null}
                   </MenuPopup>
                 </Menu>
-              )}
 
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <InlineButton
-                      aria-label="Settle thread"
-                      className="inline-flex h-5 items-center gap-0.5 rounded px-1.5 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        callbacks.onSettleToggle(thread, true);
-                      }}
-                    >
-                      <CheckIcon className="size-3 shrink-0" />
-                      <span>Settle</span>
-                    </InlineButton>
-                  }
-                />
-                <TooltipPopup side="top">Move to Settled</TooltipPopup>
-              </Tooltip>
-            </div>
-          </div>
-        </div>
-
-        {/* Row 2: Thread Title (double-click to rename inline) */}
-        <div className="flex min-w-0 items-center">
-          {renaming ? (
-            <input
-              ref={renameInputRef}
-              value={draftTitle}
-              onChange={(event) => setDraftTitle(event.target.value)}
-              onClick={(event) => event.stopPropagation()}
-              onBlur={commitRename}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  commitRename();
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  renameCancelledRef.current = true;
-                  onEndRename();
-                }
-              }}
-              className="h-5 w-full rounded border border-ring bg-background px-1.5 text-sm font-medium text-foreground outline-none"
-            />
-          ) : (
-            <div
-              onDoubleClick={(event) => {
-                event.stopPropagation();
-                onStartRename();
-              }}
-              title={thread.title}
-              className={cn(
-                "min-w-0 flex-1 truncate text-sm",
-                isActive || thread.unread ? "font-medium text-sidebar-foreground" : "font-medium",
-              )}
-            >
-              {thread.title}
-            </div>
-          )}
-        </div>
-
-        {/* Row 3: Branch / cwd preview + Pi provider badge */}
-        <div className="flex h-4 w-full items-center justify-between gap-2 text-2xs text-sidebar-muted-foreground/80">
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            <GitBranchIcon className="size-3 shrink-0 opacity-75" />
-            <span className="truncate">main</span>
-          </div>
-          <div className="flex shrink-0 items-center gap-1" title="Pi">
-            <PiProviderLogo className="size-3.5 opacity-90" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function SidebarThreadSlimRow({
-  thread,
-  shelf,
-  isActive,
-  renaming,
-  onStartRename,
-  onEndRename,
-  callbacks,
-}: {
-  thread: ThreadSummary;
-  shelf: "settled" | "snoozed";
-  isActive: boolean;
-  renaming: boolean;
-  onStartRename: () => void;
-  onEndRename: () => void;
-  callbacks: SidebarThreadRowCallbacks;
-}) {
-  const [draftTitle, setDraftTitle] = useState(thread.title);
-  const renameInputRef = useRef<HTMLInputElement | null>(null);
-  const renameCancelledRef = useRef(false);
-  const projectName = projectBasename(thread.cwd);
-
-  useEffect(() => {
-    if (renaming) {
-      setDraftTitle(thread.title);
-      renameCancelledRef.current = false;
-      requestAnimationFrame(() => {
-        renameInputRef.current?.focus();
-        renameInputRef.current?.select();
-      });
-    }
-  }, [renaming, thread.title]);
-
-  const commitRename = () => {
-    if (renameCancelledRef.current) return;
-    const trimmed = draftTitle.trim();
-    onEndRename();
-    if (trimmed.length > 0 && trimmed !== thread.title) {
-      callbacks.onRename(thread, trimmed);
-    }
-  };
-
-  return (
-    <div data-thread-item className="group/sidebar-row relative">
-      <div
-        role="button"
-        tabIndex={0}
-        data-testid={`thread-row-${thread.id}`}
-        onClick={() => {
-          if (!renaming) callbacks.onSelect(thread);
-        }}
-        onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
-          if (renaming) return;
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            callbacks.onSelect(thread);
-          }
-        }}
-        onContextMenu={(event: ReactMouseEvent<HTMLDivElement>) => {
-          event.preventDefault();
-          callbacks.onContextMenu(thread, { x: event.clientX, y: event.clientY });
-        }}
-        className={cn(
-          "relative flex h-9 w-full cursor-pointer items-center justify-between gap-1.5 rounded-lg border px-2.5 text-left text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden",
-          isActive
-            ? "border-sidebar-border/80 bg-sidebar-row-selected font-medium text-sidebar-accent-foreground dark:border-transparent"
-            : shelf === "settled"
-              ? "border-transparent bg-transparent text-sidebar-muted-foreground any-hover:bg-sidebar-row-hover any-hover:text-sidebar-foreground"
-              : "border-transparent bg-transparent text-sidebar-foreground/90 any-hover:bg-sidebar-row-hover any-hover:text-sidebar-accent-foreground",
-        )}
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span className="inline-flex shrink-0">
-                  <ProjectIcon
-                    projectName={projectName}
-                    className={cn("size-3.5 shrink-0", shelf === "settled" && !isActive && "opacity-75")}
-                  />
-                </span>
-              }
-            />
-            <TooltipPopup side="top">{projectName}</TooltipPopup>
-          </Tooltip>
-
-          {renaming ? (
-            <input
-              ref={renameInputRef}
-              value={draftTitle}
-              onChange={(event) => setDraftTitle(event.target.value)}
-              onClick={(event) => event.stopPropagation()}
-              onBlur={commitRename}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  commitRename();
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  renameCancelledRef.current = true;
-                  onEndRename();
-                }
-              }}
-              className="h-5 min-w-0 flex-1 rounded border border-ring bg-background px-1.5 text-xs font-medium text-foreground outline-none"
-            />
-          ) : (
-            <span
-              onDoubleClick={(event) => {
-                event.stopPropagation();
-                onStartRename();
-              }}
-              title={thread.title}
-              className="min-w-0 flex-1 truncate"
-            >
-              {thread.title}
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label="Settle thread"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          callbacks.onSettleToggle(thread, true);
+                        }}
+                        className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                      />
+                    }
+                  >
+                    <CheckIcon className="size-3.5" />
+                    Settle
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">Settle thread</TooltipPopup>
+                </Tooltip>
+              </span>
             </span>
-          )}
-        </div>
+          </div>
 
-        <div className="relative flex shrink-0 items-center">
-          {/* Timestamp / Wake label (hidden on hover) */}
-          <span className="font-mono text-2xs text-sidebar-muted-foreground/80 tabular-nums transition-opacity duration-150 group-any-hover/sidebar-row:opacity-0">
-            {shelf === "snoozed" && thread.snoozedUntil ? (
-              formatSnoozeWakeLabel(thread.snoozedUntil)
-            ) : (
-              <RelativeTimeText timestampMs={thread.settledAt ?? thread.updatedAt} />
-            )}
-          </span>
+          {/* Line 2: Thread title */}
+          <div className="mt-1 flex min-w-0">{titleNode}</div>
 
-          {/* Hover action: Wake or Un-settle */}
-          <div
-            className="pointer-events-none absolute top-1/2 right-0 flex -translate-y-1/2 items-center opacity-0 transition-opacity duration-150 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100"
-            onClick={(event) => event.stopPropagation()}
-          >
-            {shelf === "snoozed" ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <InlineButton
-                      aria-label="Wake thread now"
-                      className="inline-flex size-5 items-center justify-center rounded text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        callbacks.onSnooze(thread, null);
-                      }}
-                    >
-                      <AlarmClockOffIcon className="size-3.5" />
-                    </InlineButton>
-                  }
-                />
-                <TooltipPopup side="top">Wake thread now</TooltipPopup>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <InlineButton
-                      aria-label="Un-settle thread"
-                      className="inline-flex size-5 items-center justify-center rounded text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        callbacks.onSettleToggle(thread, false);
-                      }}
-                    >
-                      <Undo2Icon className="size-3.5" />
-                    </InlineButton>
-                  }
-                />
-                <TooltipPopup side="top">Un-settle thread</TooltipPopup>
-              </Tooltip>
-            )}
+          {/* Line 3: Branch + Pi provider icon */}
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-secondary-label">
+            <span className="flex min-w-0 flex-1 truncate text-muted-foreground/40">
+              {thread.branch ?? "main"}
+            </span>
+            <span
+              aria-hidden
+              className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
+            >
+              <PiGlyph className="size-3.5 opacity-60" />
+            </span>
           </div>
         </div>
       </div>
-    </div>
+    </li>
   );
-}
-
-export function SidebarSearchResultRow({
-  thread,
-  query,
-  isActive,
-  isKeyboardSelected,
-  onSelect,
-  onHover,
-}: {
-  thread: ThreadSummary;
-  query: string;
-  isActive: boolean;
-  isKeyboardSelected: boolean;
-  onSelect: () => void;
-  onHover: () => void;
-}) {
-  const projectName = projectBasename(thread.cwd);
-
-  return (
-    <div
-      role="option"
-      aria-selected={isKeyboardSelected || isActive}
-      onClick={onSelect}
-      onMouseEnter={onHover}
-      className={cn(
-        "flex cursor-pointer flex-col gap-1 rounded-lg border px-2.5 py-2 text-left transition-colors",
-        isKeyboardSelected || isActive
-          ? "border-sidebar-border/80 bg-sidebar-row-selected text-sidebar-accent-foreground"
-          : "border-transparent text-sidebar-foreground/90 hover:bg-sidebar-row-hover",
-      )}
-    >
-      <div className="flex items-center justify-between gap-1.5 text-2xs text-sidebar-muted-foreground">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <ProjectIcon projectName={projectName} className="size-3.5 shrink-0" />
-          <span className="truncate">{projectName}</span>
-        </div>
-        <span className="font-mono tabular-nums">
-          <RelativeTimeText timestampMs={thread.updatedAt} />
-        </span>
-      </div>
-      <div className="truncate text-xs font-medium text-sidebar-foreground">
-        <HighlightedText text={thread.title} query={query} />
-      </div>
-      {thread.latestPreview && (
-        <div className="truncate text-2xs text-sidebar-muted-foreground">
-          <HighlightedText text={thread.latestPreview} query={query} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function HighlightedText({ text, query }: { text: string; query: string }) {
-  const q = query.trim();
-  if (!q) return <>{text}</>;
-  const idx = text.toLowerCase().indexOf(q.toLowerCase());
-  if (idx === -1) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <mark className="rounded-xs bg-amber-500/25 px-0.5 text-inherit">
-        {text.slice(idx, idx + q.length)}
-      </mark>
-      {text.slice(idx + q.length)}
-    </>
-  );
-}
+});

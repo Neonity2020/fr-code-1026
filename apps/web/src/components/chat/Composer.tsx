@@ -4,7 +4,7 @@
  * 视觉对齐 t3code 新线程 hero 态。mention、上下文 chip、附件上传等完整能力
  * 后续按 components/chat/ChatComposer.tsx 渐进移植。
  */
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -15,9 +15,10 @@ import {
   PaperclipIcon,
   SquareIcon,
 } from "lucide-react";
-import type { ThreadId } from "@pi-web/protocol";
-import { transport } from "@pi-web/client-runtime";
+import type { PiThinkingLevel, ThreadId } from "@pi-web/protocol";
+import { transport, useAppStore } from "@pi-web/client-runtime";
 import { ComposerSurface } from "./ComposerSurface";
+import { PiModelPicker, PiThinkingPicker } from "./PiModelPicker";
 
 export function Composer({
   threadId,
@@ -28,6 +29,74 @@ export function Composer({
   running: boolean;
   autoFocus?: boolean;
 }) {
+  const piStatus = useAppStore((s) => s.piStatus);
+  const selectedModel = useAppStore((s) => s.selectedModel);
+  const selectedThinkingLevel = useAppStore((s) => s.selectedThinkingLevel);
+  const setSelectedModel = useAppStore((s) => s.setSelectedModel);
+  const patchThreadSummary = useAppStore((s) => s.patchThreadSummary);
+  const threadSummary = useAppStore((s) => s.threads.find((t) => t.id === threadId));
+
+  const models = useMemo(() => piStatus?.models ?? [], [piStatus?.models]);
+  const effectiveModelSlug =
+    threadSummary?.model ??
+    selectedModel ??
+    piStatus?.defaultModel ??
+    models[0]?.slug ??
+    null;
+
+  const activeModelInfo = useMemo(() => {
+    if (!effectiveModelSlug) return models[0] ?? null;
+    return (
+      models.find(
+        (m) =>
+          m.slug.toLowerCase() === effectiveModelSlug.toLowerCase() ||
+          m.id === effectiveModelSlug,
+      ) ??
+      models[0] ??
+      null
+    );
+  }, [effectiveModelSlug, models]);
+
+  const effectiveThinkingLevel: PiThinkingLevel | null =
+    threadSummary?.thinkingLevel ??
+    selectedThinkingLevel ??
+    piStatus?.defaultThinkingLevel ??
+    null;
+
+  const handleModelChange = (slug: string) => {
+    const nextModel = models.find((m) => m.slug === slug);
+    const nextThinking: PiThinkingLevel | null =
+      nextModel && nextModel.thinkingLevels.length > 0
+        ? effectiveThinkingLevel && nextModel.thinkingLevels.includes(effectiveThinkingLevel)
+          ? effectiveThinkingLevel
+          : nextModel.thinkingLevels.includes("medium")
+            ? "medium"
+            : (nextModel.thinkingLevels[0] ?? null)
+        : "off";
+
+    setSelectedModel(slug, nextThinking);
+    patchThreadSummary(threadId, { model: slug, thinkingLevel: nextThinking });
+    transport.dispatch({
+      type: "thread.set_model",
+      threadId,
+      model: slug,
+      ...(nextThinking ? { thinkingLevel: nextThinking } : {}),
+    });
+  };
+
+  const handleThinkingChange = (level: PiThinkingLevel) => {
+    const slug = effectiveModelSlug ?? models[0]?.slug;
+    if (!slug) return;
+    setSelectedModel(slug, level);
+    patchThreadSummary(threadId, { model: slug, thinkingLevel: level });
+    transport.dispatch({
+      type: "thread.set_model",
+      threadId,
+      model: slug,
+      thinkingLevel: level,
+    });
+  };
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false, codeBlock: false }),
@@ -83,7 +152,13 @@ export function Composer({
     if (!editor || running) return;
     const text = editor.getText().trim();
     if (text.length === 0) return;
-    transport.dispatch({ type: "message.send", threadId, text });
+    transport.dispatch({
+      type: "message.send",
+      threadId,
+      text,
+      ...(effectiveModelSlug ? { model: effectiveModelSlug } : {}),
+      ...(effectiveThinkingLevel ? { thinkingLevel: effectiveThinkingLevel } : {}),
+    });
     editor.commands.clearContent();
     editor.commands.focus("end");
   };
@@ -95,8 +170,21 @@ export function Composer({
           <EditorContent editor={editor} />
           <div className="flex items-center justify-between gap-1 px-2.5 pb-2.5">
             <div className="flex min-w-0 items-center gap-1">
-              {/* 模型 chip：pi 单 provider，静态展示 */}
-              <ComposerChip icon={<PiGlyph />} label="pi" />
+              <PiModelPicker
+                models={models}
+                selectedModelSlug={effectiveModelSlug}
+                onSelectModel={handleModelChange}
+              />
+              {activeModelInfo && activeModelInfo.thinkingLevels.length > 0 ? (
+                <>
+                  <ChipSeparator />
+                  <PiThinkingPicker
+                    levels={activeModelInfo.thinkingLevels}
+                    selectedLevel={effectiveThinkingLevel}
+                    onSelectLevel={handleThinkingChange}
+                  />
+                </>
+              ) : null}
               <ChipSeparator />
               {/* 权限模式 chip：pi 默认 full access，静态展示 */}
               <ComposerChip icon={<LockIcon className="size-3.5" />} label="Full access" />
@@ -153,20 +241,4 @@ function ComposerChip({ icon, label }: { icon: React.ReactNode; label: string })
 
 function ChipSeparator() {
   return <div className="bg-border mx-0.5 h-4 w-px" />;
-}
-
-function PiGlyph() {
-  return (
-    <svg
-      viewBox="165.29 165.29 469.43 469.43"
-      aria-hidden="true"
-      className="size-3.5 shrink-0 fill-[#0F0F0F] dark:fill-[#F5F5F5]"
-    >
-      <path
-        d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-        fillRule="evenodd"
-      />
-      <path d="M517.36 400H634.72V634.72H517.36Z" />
-    </svg>
-  );
 }

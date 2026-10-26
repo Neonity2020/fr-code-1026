@@ -1,6 +1,8 @@
 export {
   PiRpcConnection,
   checkPiStatus,
+  discoverPiModels,
+  parsePiModelSlug,
   type PiRecord,
   type PiRpcSpawnOptions,
 } from "./rpc.ts";

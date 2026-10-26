@@ -327,9 +327,9 @@ function EmptyWelcome({ connection }: { connection: string }) {
   const piStatus = useAppStore((state) => state.piStatus);
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-      <h1 className="text-2xl font-semibold">Pi Web</h1>
+      <h1 className="text-2xl font-semibold">FR Code</h1>
       <p className="text-muted-foreground max-w-md text-sm">
-        单 pi agent 的控制台。点击左侧顶栏新建一个线程开始对话。
+        FR Code · 单 pi agent 的控制台。点击左侧顶栏新建一个线程开始对话。
       </p>
       {piStatus && !piStatus.installed && (
         <p className="text-error max-w-md text-sm">
