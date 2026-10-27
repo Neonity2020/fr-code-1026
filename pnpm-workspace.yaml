@@ -6,6 +6,7 @@ packages:
 # patch 文件复制自 t3code/patches/@pierre%2Fdiffs@1.6.1.patch
 allowBuilds:
   esbuild: true
+  node-pty: true
 
 patchedDependencies:
   "@pierre/diffs@1.6.1": patches/@pierre__diffs@1.6.1.patch

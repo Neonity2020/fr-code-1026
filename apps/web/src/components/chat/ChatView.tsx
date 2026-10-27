@@ -13,6 +13,13 @@ import { useSidebarVisibility } from "../ui/sidebar";
 import { Composer } from "./Composer";
 import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
 import { TurnItemRow } from "./TurnItemRows";
+import { ThreadDetailsPanel } from "./ThreadDetailsPanel";
+import { observeResize } from "~/lib/observeResize";
+import { canShowInlineThreadPanel } from "./threadPanelLayout";
+import { ScriptOutputDrawer } from "./ScriptOutputDrawer";
+import { TerminalDrawer } from "./TerminalDrawer";
+import { ScrollTextIcon, TerminalIcon } from "lucide-react";
+import { Button } from "../ui/button";
 
 export function ChatView({ threadId }: { threadId: ThreadId }) {
   const isSidebarVisible = useSidebarVisibility();
@@ -23,9 +30,23 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
   const projectName = summary ? basename(summary.cwd) : "…";
   const isHeroState = items.length === 0;
   const { tr } = useI18n();
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [inlinePanelOpen, setInlinePanelOpen] = useState(true);
+  const [outputOpen, setOutputOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [outputRevision, setOutputRevision] = useState(0);
+  useEffect(() => { setOutputOpen(false); setTerminalOpen(false); }, [threadId]);
+  const showScriptOutput = () => { setTerminalOpen(false); setOutputOpen(true); setOutputRevision((value) => value + 1); };
+  const inlinePanel = canShowInlineThreadPanel(containerSize.width, containerSize.height);
+  useEffect(() => {
+    if (!container) return;
+    setContainerSize({ width: container.clientWidth, height: container.clientHeight });
+    return observeResize(container, ([entry]) => { if (entry) setContainerSize({ width: entry.contentRect.width, height: entry.contentRect.height }); });
+  }, [container]);
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col">
+    <div ref={setContainer} className="relative flex h-full min-w-0 flex-1 flex-col">
       <header
         className={cn(
           "flex h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1.5 border-b border-border/50 px-4 transition-[padding] duration-150",
@@ -39,7 +60,9 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
         <span className="truncate text-xs font-medium">
           {summary?.title ?? tr("新线程", "New thread")}
         </span>
+        <div className="ml-auto flex items-center gap-1"><Button variant="ghost-muted" size="icon-xs" aria-label={tr("切换脚本输出", "Toggle script output")} aria-expanded={outputOpen} onClick={() => { setTerminalOpen(false); setOutputOpen(!outputOpen); }}><ScrollTextIcon /></Button><Button variant="ghost-muted" size="icon-xs" aria-label={tr("切换终端", "Toggle terminal")} aria-expanded={terminalOpen} onClick={() => { setOutputOpen(false); setTerminalOpen(!terminalOpen); }}><TerminalIcon /></Button>{summary && <ThreadDetailsPanel threadId={threadId} cwd={summary.cwd} running={summary.status === "running"} inline={inlinePanel} inlineOpen={inlinePanelOpen} onInlineOpenChange={setInlinePanelOpen} onShowScriptOutput={showScriptOutput} />}</div>
       </header>
+      <div className="flex min-h-0 flex-1 flex-col" style={inlinePanel && inlinePanelOpen ? { paddingRight: "min(324px, max(0px, calc(var(--chat-content-max-width) + 648px - 100%)))" } : undefined}>
       {isHeroState ? (
         <HeroState threadId={threadId} projectName={projectName} running={summary?.status === "running"} />
       ) : (
@@ -50,6 +73,9 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
           </div>
         </>
       )}
+      </div>
+      {outputOpen && <ScriptOutputDrawer key={threadId} threadId={threadId} revision={outputRevision} onClose={() => setOutputOpen(false)} />}
+      {terminalOpen && <TerminalDrawer key={threadId} threadId={threadId} onClose={() => setTerminalOpen(false)} />}
     </div>
   );
 }

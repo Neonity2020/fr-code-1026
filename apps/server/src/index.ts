@@ -15,11 +15,17 @@ import * as fsp from "node:fs/promises";
 import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { ClientMessage, ServerMessage } from "@pi-web/protocol";
 import { PiThreadRunner, checkPiStatus } from "@pi-web/provider-pi";
 import { ThreadStore, type ThreadSubscriber } from "./threads.ts";
+import { countUntrackedLines, getFilePatch, parseGitStatus } from "./git-status.ts";
+import { checkoutRemoteBranch, commitChanges, createBranch, getPushTarget, localBranches, pushBranch, remoteBranches, switchBranch, syncRemote } from "./git-actions.ts";
+import { ProjectScripts } from "./project-scripts.ts";
+import { availableEditors, editorLaunch } from "./editors.ts";
+import { Terminals } from "./terminals.ts";
 
 const PORT = Number(process.env.PORT ?? 6115);
 const serverDir = path.dirname(fileURLToPath(import.meta.url)); // apps/server/src
@@ -28,6 +34,7 @@ const dataDir = process.env.PI_WEB_DATA_DIR ?? path.join(repoDir, ".data");
 const webDist = path.resolve(repoDir, "apps/web/dist");
 const defaultCwd = process.env.PI_WEB_DEFAULT_CWD ?? process.cwd();
 const homeDir = os.homedir();
+const execFileAsync = promisify(execFile);
 
 function expandHomePath(inputPath: string): string {
   const trimmed = inputPath.trim();
@@ -193,6 +200,9 @@ function pickFolderFromNativeDialog(options: {
 }
 
 const store = new ThreadStore(dataDir, defaultCwd);
+const projectScripts = new ProjectScripts(dataDir);
+const terminals = new Terminals();
+process.on("exit", () => { projectScripts.dispose(); terminals.dispose(); });
 const runners = new Map<string, PiThreadRunner>();
 
 const runnerFor = (threadId: string): PiThreadRunner | undefined => {
@@ -236,6 +246,189 @@ const server = http.createServer((request, response) => {
   if (url.pathname === "/api/threads") {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ threads: store.listThreads(), projects: store.listProjects() }));
+    return;
+  }
+  if (url.pathname === "/api/editors" && request.method === "GET") {
+    void availableEditors().then((editors) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ editors }));
+    });
+    return;
+  }
+  if (url.pathname === "/api/thread/scripts") {
+    const threadId = url.searchParams.get("threadId") ?? "";
+    const thread = store.get(threadId);
+    if (!thread) { response.writeHead(404); response.end(); return; }
+    if (request.method === "GET") {
+      try {
+        const result = { scripts: projectScripts.list(thread.summary.cwd), ...projectScripts.fileScripts(thread.summary.cwd), job: projectScripts.status(threadId) };
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(result));
+      } catch (error) {
+        response.writeHead(500, { "content-type": "text/plain" });
+        response.end(error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+    if (request.method !== "POST" || request.headers.origin !== `http://${request.headers.host}` || request.headers["content-type"] !== "application/json") {
+      response.writeHead(403); response.end(); return;
+    }
+    let body = "";
+    request.on("data", (chunk) => { body += String(chunk); if (body.length > 8192) request.destroy(); });
+    request.on("end", () => {
+      try {
+        const input: unknown = JSON.parse(body);
+        if (!input || typeof input !== "object" || !("action" in input)) throw new Error("Invalid action");
+        if (input.action === "save" && "name" in input && typeof input.name === "string" && "command" in input && typeof input.command === "string" && (!("id" in input) || typeof input.id === "string")) {
+          projectScripts.save(thread.summary.cwd, { name: input.name, command: input.command, ...("id" in input ? { id: input.id as string } : {}), ...("icon" in input ? { icon: input.icon } : {}) });
+        } else if (input.action === "delete" && "id" in input && typeof input.id === "string") {
+          projectScripts.delete(thread.summary.cwd, input.id);
+        } else if (input.action === "import" && "name" in input && typeof input.name === "string" && "command" in input && typeof input.command === "string") {
+          projectScripts.importFileScript(thread.summary.cwd, input.name, input.command);
+        } else if (input.action === "run" && "id" in input && typeof input.id === "string") {
+          projectScripts.run(threadId, thread.summary.cwd, input.id);
+        } else if (input.action === "stop") {
+          projectScripts.stop(threadId);
+        } else throw new Error("Invalid action");
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ scripts: projectScripts.list(thread.summary.cwd), ...projectScripts.fileScripts(thread.summary.cwd), job: projectScripts.status(threadId) }));
+      } catch (error) {
+        response.writeHead(400, { "content-type": "text/plain" });
+        response.end(error instanceof Error ? error.message : String(error));
+      }
+    });
+    return;
+  }
+  if (url.pathname === "/api/thread/git" && request.method === "GET") {
+    const thread = store.get(url.searchParams.get("threadId") ?? "");
+    if (!thread) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+    const cwd = thread.summary.cwd;
+    void (async () => {
+      try {
+        const git = async (...args: string[]) => (await execFileAsync("git", args, { cwd, maxBuffer: 4 * 1024 * 1024 })).stdout;
+        const isRepo = await git("rev-parse", "--is-inside-work-tree").then((value) => value.trim() === "true", (error: unknown) => {
+          if (error && typeof error === "object" && "stderr" in error && typeof error.stderr === "string" && error.stderr.includes("not a git repository")) return false;
+          throw error;
+        });
+        if (!isRepo) {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ branch: null, files: [], additions: 0, deletions: 0, hostname: os.hostname() }));
+          return;
+        }
+        const root = (await git("rev-parse", "--show-toplevel")).trim();
+        const rootGit = async (...args: string[]) => (await execFileAsync("git", args, { cwd: root, maxBuffer: 4 * 1024 * 1024 })).stdout;
+        const hasHead = await rootGit("rev-parse", "--verify", "HEAD").then(() => true, () => false);
+        const [branch, status, diff, branches, remoteRefs, pushTarget] = await Promise.all([
+          git("branch", "--show-current"),
+          rootGit("status", "--porcelain=v1", "-z", "--untracked-files=all"),
+          hasHead ? rootGit("diff", "--no-ext-diff", "--numstat", "HEAD") : Promise.all([rootGit("diff", "--no-ext-diff", "--numstat", "--cached"), rootGit("diff", "--no-ext-diff", "--numstat")]).then((parts) => parts.join("\n")),
+          localBranches(cwd),
+          remoteBranches(cwd),
+          getPushTarget(cwd),
+        ]);
+        const stats = parseGitStatus(status, diff);
+        const untracked = await countUntrackedLines(root, status);
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ branch: branch.trim() || "HEAD", branches, remoteBranches: remoteRefs, pushTarget, ...stats, additions: stats.additions + untracked.additions, statsIncomplete: untracked.incomplete, hostname: os.hostname() }));
+      } catch (error) {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      }
+    })();
+    return;
+  }
+  if (url.pathname === "/api/thread/diff" && request.method === "GET") {
+    const thread = store.get(url.searchParams.get("threadId") ?? "");
+    const file = url.searchParams.get("file");
+    const mode = url.searchParams.get("mode") ?? "all";
+    if (!thread || !file || (mode !== "all" && mode !== "staged" && mode !== "unstaged")) { response.writeHead(400); response.end(); return; }
+    void getFilePatch(thread.summary.cwd, file, mode).then((result) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(result));
+    }, (error: unknown) => {
+      response.writeHead(400, { "content-type": "text/plain" });
+      response.end(error instanceof Error ? error.message : String(error));
+    });
+    return;
+  }
+  if (url.pathname === "/api/thread/git-action" && request.method === "POST") {
+    if (request.headers.origin !== `http://${request.headers.host}` || request.headers["content-type"] !== "application/json") {
+      response.writeHead(403);
+      response.end();
+      return;
+    }
+    const thread = store.get(url.searchParams.get("threadId") ?? "");
+    if (!thread) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+    let body = "";
+    request.on("data", (chunk) => {
+      body += String(chunk);
+      if (body.length > 8192) request.destroy();
+    });
+    request.on("end", () => {
+      void (async () => {
+        try {
+          const input: unknown = JSON.parse(body);
+          if (!input || typeof input !== "object" || !("action" in input)) throw new Error("Invalid action");
+          if (input.action === "switch" && "branch" in input && typeof input.branch === "string") {
+            await switchBranch(thread.summary.cwd, input.branch);
+          } else if (input.action === "checkout-remote" && "ref" in input && typeof input.ref === "string") {
+            await checkoutRemoteBranch(thread.summary.cwd, input.ref);
+          } else if (input.action === "create-branch" && "branch" in input && typeof input.branch === "string" && "base" in input && typeof input.base === "string") {
+            await createBranch(thread.summary.cwd, input.branch, input.base);
+          } else if (input.action === "commit" && "message" in input && typeof input.message === "string") {
+            await commitChanges(thread.summary.cwd, input.message);
+          } else if (input.action === "push" && "branch" in input && typeof input.branch === "string" && "remote" in input && typeof input.remote === "string" && "ref" in input && typeof input.ref === "string") {
+            await pushBranch(thread.summary.cwd, { branch: input.branch, remote: input.remote, ref: input.ref });
+          } else if ((input.action === "fetch" || input.action === "pull") && "branch" in input && typeof input.branch === "string" && "remote" in input && typeof input.remote === "string" && "ref" in input && typeof input.ref === "string") {
+            await syncRemote(thread.summary.cwd, input.action, { branch: input.branch, remote: input.remote, ref: input.ref });
+          } else {
+            throw new Error("Invalid action");
+          }
+          response.writeHead(204);
+          response.end();
+        } catch (error) {
+          response.writeHead(400, { "content-type": "text/plain" });
+          response.end(error instanceof Error ? error.message : String(error));
+        }
+      })();
+    });
+    return;
+  }
+  if (url.pathname === "/api/thread/open" && request.method === "POST") {
+    const origin = request.headers.origin;
+    if (!origin || origin !== `http://${request.headers.host}` || request.headers["content-type"] !== "application/json") {
+      response.writeHead(403);
+      response.end();
+      return;
+    }
+    const thread = store.get(url.searchParams.get("threadId") ?? "");
+    const target = url.searchParams.get("target");
+    if (!thread || !target) {
+      response.writeHead(400);
+      response.end();
+      return;
+    }
+    const launch = editorLaunch(target, thread.summary.cwd, process.platform);
+    if (!launch) {
+      response.writeHead(400);
+      response.end("Unknown editor or unsupported platform.");
+      return;
+    }
+    void execFileAsync(launch.command, launch.args).then(() => {
+      response.writeHead(204);
+      response.end();
+    }, (error: unknown) => {
+      response.writeHead(500, { "content-type": "text/plain" });
+      response.end(error instanceof Error ? error.message : String(error));
+    });
     return;
   }
   if (url.pathname === "/api/fs/browse" && request.method === "GET") {
@@ -301,7 +494,56 @@ const server = http.createServer((request, response) => {
 
 // ---------- WebSocket ----------
 
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({ noServer: true });
+const terminalWss = new WebSocketServer({ noServer: true, maxPayload: 65536 });
+server.on("upgrade", (request, socket, head) => {
+  const url = new URL(request.url ?? "/", `http://localhost:${PORT}`);
+  if (url.pathname === "/ws") {
+    wss.handleUpgrade(request, socket, head, (client) => wss.emit("connection", client, request));
+    return;
+  }
+  if (url.pathname === "/ws/terminal") {
+    const host = request.headers.host ?? "";
+    let hostname = "";
+    try { hostname = new URL(`http://${host}`).hostname; } catch { /* invalid host */ }
+    const address = request.socket.remoteAddress ?? "";
+    const localAddress = address === "::1" || address === "127.0.0.1" || address === "::ffff:127.0.0.1";
+    const localHost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+    if (!localAddress || !localHost || request.headers.origin !== `http://${host}` || !store.get(url.searchParams.get("threadId") ?? "")) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    terminalWss.handleUpgrade(request, socket, head, (client) => terminalWss.emit("connection", client, request));
+    return;
+  }
+  socket.destroy();
+});
+
+terminalWss.on("connection", (socket, request) => {
+  const url = new URL(request.url ?? "/", `http://localhost:${PORT}`);
+  const threadId = url.searchParams.get("threadId") ?? "";
+  const thread = store.get(threadId);
+  if (!thread) { socket.close(); return; }
+  try {
+    const session = terminals.connect(threadId, thread.summary.cwd, (message) => {
+      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
+    });
+    socket.on("close", session.disconnect);
+    socket.on("message", (raw) => {
+      try {
+        const message: unknown = JSON.parse(String(raw));
+        if (!message || typeof message !== "object" || !("type" in message)) return;
+        if (message.type === "input" && "data" in message && typeof message.data === "string" && message.data.length <= 32768) session.write(message.data);
+        else if (message.type === "resize" && "cols" in message && "rows" in message && Number.isInteger(message.cols) && Number.isInteger(message.rows) && typeof message.cols === "number" && typeof message.rows === "number" && message.cols >= 2 && message.cols <= 300 && message.rows >= 2 && message.rows <= 300) session.resize(message.cols, message.rows);
+        else if (message.type === "terminate") session.terminate();
+      } catch { /* ignore malformed input or exited terminal */ }
+    });
+  } catch (error) {
+    socket.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
+    socket.close();
+  }
+});
 
 function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
@@ -374,6 +616,7 @@ wss.on("connection", (socket) => {
               return;
             }
             case "thread.delete": {
+              terminals.close(command.threadId);
               runnerFor(command.threadId)?.dispose();
               runners.delete(command.threadId);
               store.deleteThread(command.threadId);

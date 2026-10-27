@@ -20,6 +20,8 @@ export {
 export type ThreadId = string;
 export type TurnItemId = string;
 export type CommandId = string;
+export const PROJECT_SCRIPT_ICONS = ["play", "test", "lint", "configure", "build", "debug"] as const;
+export type ProjectScriptIcon = typeof PROJECT_SCRIPT_ICONS[number];
 
 export interface ScopedThreadRef {
   environmentId: string;
