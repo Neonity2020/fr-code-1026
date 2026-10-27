@@ -8,8 +8,10 @@
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  DownloadIcon,
   FileDiffIcon,
   FolderIcon,
+  GitBranchIcon,
   LanguagesIcon,
   MonitorIcon,
   MoonIcon,
@@ -34,6 +36,7 @@ import {
   subscribeAppearanceMode,
   type AppearanceMode,
 } from "~/theme/appearancePreference";
+import { downloadThreadAsJson, downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { emitChatPanelAction } from "../chat/chatPanelBus";
 import {
   Command,
@@ -199,6 +202,57 @@ export function CommandPalette() {
           title: tr("查看变更", "Show changes"),
           keywords: ["changes", "diff", "git", "变更", "差异"],
           run: () => emitChatPanelAction("open-changes"),
+        },
+        {
+          value: "action:fork-thread",
+          group: COMMAND_PALETTE_ACTION_GROUP,
+          title: tr("分叉当前线程", "Fork current thread"),
+          keywords: ["fork", "branch", "duplicate", "分叉", "复制", "分支"],
+          run: () => {
+            useAppStore.getState().markNewThreadRequested();
+            transport.dispatch({
+              type: "thread.fork",
+              sourceThreadId: activeThreadId,
+            });
+          },
+        },
+        {
+          value: "action:export-markdown",
+          group: COMMAND_PALETTE_ACTION_GROUP,
+          title: tr("导出当前对话为 Markdown", "Export conversation as Markdown"),
+          keywords: ["export", "markdown", "save", "download", "导出", "下载"],
+          run: () => {
+            const activeThread = threads.find((t) => t.id === activeThreadId);
+            if (!activeThread) return;
+            const items = useAppStore.getState().byThread[activeThreadId]?.items ?? [];
+            if (items.length > 0) {
+              downloadThreadAsMarkdown(activeThread, items);
+            } else {
+              window.open(
+                `/api/thread/export?threadId=${encodeURIComponent(activeThreadId)}&format=markdown`,
+                "_blank",
+              );
+            }
+          },
+        },
+        {
+          value: "action:export-json",
+          group: COMMAND_PALETTE_ACTION_GROUP,
+          title: tr("导出当前对话为 JSON", "Export conversation as JSON"),
+          keywords: ["export", "json", "save", "download", "导出", "数据"],
+          run: () => {
+            const activeThread = threads.find((t) => t.id === activeThreadId);
+            if (!activeThread) return;
+            const items = useAppStore.getState().byThread[activeThreadId]?.items ?? [];
+            if (items.length > 0) {
+              downloadThreadAsJson(activeThread, items);
+            } else {
+              window.open(
+                `/api/thread/export?threadId=${encodeURIComponent(activeThreadId)}&format=json`,
+                "_blank",
+              );
+            }
+          },
         },
       );
     }
@@ -379,6 +433,11 @@ function PaletteItemIcon({ item }: { item: CommandPaletteItem }) {
       return <ScrollTextIcon className="size-4" />;
     case "action:open-changes":
       return <FileDiffIcon className="size-4" />;
+    case "action:fork-thread":
+      return <GitBranchIcon className="size-4" />;
+    case "action:export-markdown":
+    case "action:export-json":
+      return <DownloadIcon className="size-4" />;
     default:
       break;
   }

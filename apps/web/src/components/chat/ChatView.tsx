@@ -20,7 +20,8 @@ import { canShowInlineThreadPanel } from "./threadPanelLayout";
 import { ScriptOutputDrawer } from "./ScriptOutputDrawer";
 import { TerminalDrawer } from "./TerminalDrawer";
 import { subscribeChatPanelActions } from "./chatPanelBus";
-import { ArrowDownIcon, ScrollTextIcon, TerminalIcon } from "lucide-react";
+import { ArrowDownIcon, DownloadIcon, ScrollTextIcon, TerminalIcon } from "lucide-react";
+import { downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { Button } from "../ui/button";
 
 export function ChatView({ threadId }: { threadId: ThreadId }) {
@@ -76,7 +77,28 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
         <span className="truncate text-xs font-medium">
           {summary?.title ?? tr("新线程", "New thread")}
         </span>
-        <div className="ml-auto flex items-center gap-1"><Button variant="ghost-muted" size="icon-xs" aria-label={tr("切换脚本输出", "Toggle script output")} aria-expanded={outputOpen} onClick={() => { setTerminalOpen(false); setOutputOpen(!outputOpen); }}><ScrollTextIcon /></Button><Button variant="ghost-muted" size="icon-xs" aria-label={tr("切换终端", "Toggle terminal")} aria-expanded={terminalOpen} onClick={() => { setOutputOpen(false); setTerminalOpen(!terminalOpen); }}><TerminalIcon /></Button>{summary && <ThreadDetailsPanel threadId={threadId} cwd={summary.cwd} running={summary.status === "running"} inline={inlinePanel} inlineOpen={inlinePanelOpen} onInlineOpenChange={setInlinePanelOpen} onShowScriptOutput={showScriptOutput} />}</div>
+        <div className="ml-auto flex items-center gap-1">
+          {summary && (
+            <Button
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label={tr("导出为 Markdown", "Export as Markdown")}
+              title={tr("导出对话为 Markdown", "Export conversation as Markdown")}
+              onClick={() => {
+                if (items.length > 0) {
+                  downloadThreadAsMarkdown(summary, items);
+                } else {
+                  window.open(
+                    `/api/thread/export?threadId=${encodeURIComponent(threadId)}&format=markdown`,
+                    "_blank",
+                  );
+                }
+              }}
+            >
+              <DownloadIcon />
+            </Button>
+          )}
+          <Button variant="ghost-muted" size="icon-xs" aria-label={tr("切换脚本输出", "Toggle script output")} aria-expanded={outputOpen} onClick={() => { setTerminalOpen(false); setOutputOpen(!outputOpen); }}><ScrollTextIcon /></Button><Button variant="ghost-muted" size="icon-xs" aria-label={tr("切换终端", "Toggle terminal")} aria-expanded={terminalOpen} onClick={() => { setOutputOpen(false); setTerminalOpen(!terminalOpen); }}><TerminalIcon /></Button>{summary && <ThreadDetailsPanel threadId={threadId} cwd={summary.cwd} running={summary.status === "running"} inline={inlinePanel} inlineOpen={inlinePanelOpen} onInlineOpenChange={setInlinePanelOpen} onShowScriptOutput={showScriptOutput} />}</div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col" style={inlinePanel && inlinePanelOpen ? { paddingRight: "min(324px, max(0px, calc(var(--chat-content-max-width) + 648px - 100%)))" } : undefined}>
       {isHeroState ? (

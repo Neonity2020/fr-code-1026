@@ -60,6 +60,11 @@ pnpm test
 - **输入草稿**：按线程持久化未发送内容，切换线程不再丢输入（对齐 t3code `composerDraftStore`）。
 - **外观偏好**：浅色 / 深色 / 跟随系统落盘到 `t3code:theme-appearance-mode`（与 `index.html` 首帧引导脚本同键，避免闪烁），设置页与命令面板共享同一份状态。
 - **聊天面板动作总线**：`components/chat/chatPanelBus.ts` 让命令面板能打开当前线程的终端 / 脚本输出 / 变更抽屉。
+- **线程分叉 (Thread Fork)**：支持从已有线程分叉（Fork）出独立分支线程，深拷贝历史 TurnItems 与模型/配置，便于并行探索方案；侧栏右键、命令面板（⌘K）与快捷指令 `/fork` 均可快速触发。
+- **对话导出 (Markdown & JSON)**：顶栏操作区、侧栏右键、命令面板及 `/export` 指令支持一键将当前会话完整记录导出下载为规范的 Markdown 文档或 JSON 结构数据（服务端与客户端双重兜底）。
+- **快捷指令 (Slash Commands)**：Composer 输入行首 `/` 呼出快捷指令浮层（`/new`、`/fork`、`/changes`、`/terminal`、`/scripts`、`/export`），支持键盘上下键与回车即时触发。
+- **时间线行内 Pierre FileDiff**：时间线中的 `file_change` 条目展开后使用 `@pierre/diffs` 进行语法高亮与增删行着色渲染，并支持 Unified / Split 布局切换。
+- **消息浮动操作条**：助手回复与用户消息悬停显示快捷操作栏，支持一键复制代码/文本并带对勾反馈提示。
 
 ## 与 t3code 的协议对齐点（升级回完整版时的兼容面）
 

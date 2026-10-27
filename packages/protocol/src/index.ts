@@ -202,6 +202,11 @@ export type Command =
       model?: string;
       thinkingLevel?: PiThinkingLevel | null;
     }
+  | {
+      type: "thread.fork";
+      sourceThreadId: ThreadId;
+      title?: string;
+    }
   | { type: "thread.delete"; threadId: ThreadId }
   | { type: "thread.rename"; threadId: ThreadId; title: string }
   | {

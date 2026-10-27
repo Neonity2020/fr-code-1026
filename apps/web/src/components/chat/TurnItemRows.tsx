@@ -6,13 +6,15 @@
  *   展开后缩进显示输出；连续的工作条目会折叠成一行摘要（见 timelineGrouping.ts）；
  * - 审批卡 = 带 Accept/Decline 的操作面板。
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   BrainIcon,
+  CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleCheckIcon,
   CircleXIcon,
+  CopyIcon,
   FileCodeIcon,
   FileDiffIcon,
   ImageIcon,
@@ -20,10 +22,13 @@ import {
   WrenchIcon,
   XIcon,
 } from "lucide-react";
+import { FileDiff } from "@pierre/diffs/react";
 import type { AttachmentItem, TurnItem } from "@pi-web/protocol";
 import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
+import { getRenderablePatch, resolveDiffThemeName } from "~/lib/diffRendering";
+import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { WorkLogButton, WorkLogDetails } from "./WorkLog";
 import {
@@ -260,12 +265,86 @@ function WorkRow({ item, nested = false }: { item: WorkTurnItem; nested?: boolea
       />
       {open && hasBody ? (
         <WorkLogDetails>
-          <pre className="text-2xs text-muted-foreground font-mono whitespace-pre-wrap break-all">
-            {detail}
-          </pre>
+          {item.type === "file_change" ? (
+            <FileChangeDiffDetail item={item} />
+          ) : (
+            <pre className="text-2xs text-muted-foreground font-mono whitespace-pre-wrap break-all">
+              {detail}
+            </pre>
+          )}
         </WorkLogDetails>
       ) : null}
     </div>
+  );
+}
+
+function FileChangeDiffDetail({ item }: { item: TurnItem & { type: "file_change" } }) {
+  const [layout, setLayout] = useState<"unified" | "split">("unified");
+  const rawPatch = useMemo(() => {
+    if (item.diffStr && item.diffStr.trim().length > 0) {
+      if (item.diffStr.includes("diff --git") || item.diffStr.includes("--- ")) {
+        return item.diffStr;
+      }
+      return `diff --git a/${item.fileName} b/${item.fileName}\n--- a/${item.fileName}\n+++ b/${item.fileName}\n${item.diffStr}`;
+    }
+    if (item.newStr !== undefined && item.newStr.length > 0) {
+      const lines = item.newStr.split("\n");
+      const hunk = lines.map((l) => `+${l}`).join("\n");
+      return `diff --git a/${item.fileName} b/${item.fileName}\nnew file mode 100644\n--- /dev/null\n+++ b/${item.fileName}\n@@ -0,0 +1,${lines.length} @@\n${hunk}\n`;
+    }
+    return null;
+  }, [item.diffStr, item.newStr, item.fileName]);
+
+  const renderable = useMemo(() => {
+    if (!rawPatch) return null;
+    return getRenderablePatch(rawPatch, `file-turn-${item.id}`);
+  }, [rawPatch, item.id]);
+
+  const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+  const theme = resolveDiffThemeName(isDark ? "dark" : "light");
+
+  if (!rawPatch) {
+    return (
+      <div className="text-muted-foreground p-1 text-2xs font-mono">
+        {item.fileName}
+      </div>
+    );
+  }
+
+  if (renderable?.kind === "files" && renderable.files.length > 0) {
+    return (
+      <div className="space-y-1.5 overflow-hidden rounded-md border border-border/60 bg-card p-1 text-xs">
+        <div className="flex items-center justify-between px-1 py-0.5 text-2xs text-muted-foreground">
+          <span className="font-mono truncate">{item.fileName}</span>
+          <button
+            type="button"
+            onClick={() => setLayout(layout === "unified" ? "split" : "unified")}
+            className="hover:bg-accent rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {layout === "unified" ? "Split" : "Unified"}
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          {renderable.files.map((file, idx) => (
+            <FileDiff
+              key={`${file.name}-${idx}`}
+              fileDiff={file}
+              options={{
+                diffStyle: layout,
+                theme,
+                preferredHighlighter: PREFERRED_HIGHLIGHTER,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <pre className="text-2xs text-muted-foreground font-mono whitespace-pre-wrap break-all">
+      {rawPatch}
+    </pre>
   );
 }
 
@@ -364,6 +443,18 @@ function UserMessageRow({
   attachments?: AttachmentItem[];
 }) {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const { tr } = useI18n();
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
 
   return (
     <div className="mt-3 flex flex-col items-end gap-1.5 first:mt-0">
@@ -408,8 +499,22 @@ function UserMessageRow({
         </div>
       )}
       {text.length > 0 && (
-        <div className="bg-message text-message-foreground max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5 text-sm whitespace-pre-wrap">
-          {text}
+        <div className="group relative max-w-[85%]">
+          <div className="bg-message text-message-foreground rounded-2xl rounded-br-md px-3.5 py-2.5 text-sm whitespace-pre-wrap">
+            {text}
+          </div>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="absolute top-1 -left-7 opacity-0 group-hover:opacity-100 flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-opacity"
+            title={tr("复制消息", "Copy message")}
+          >
+            {copied ? (
+              <CheckIcon className="size-3 text-success" />
+            ) : (
+              <CopyIcon className="size-3" />
+            )}
+          </button>
         </div>
       )}
       {lightboxImage && (
@@ -441,11 +546,46 @@ function UserMessageRow({
 }
 
 function AssistantMessageRow({ text, streaming }: { text: string; streaming: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const { tr } = useI18n();
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
+
   return (
-    <div className="py-1">
+    <div className="group relative py-1">
       <ChatMarkdown text={text} />
       {streaming && (
         <span className="bg-foreground ml-0.5 inline-block h-3.5 w-[2px] animate-pulse align-middle" />
+      )}
+      {!streaming && text.trim().length > 0 && (
+        <div className="absolute top-1 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 rounded-md border border-border/50 bg-background/90 px-1 py-0.5 shadow-xs backdrop-blur-xs">
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            title={tr("复制 Markdown", "Copy Markdown")}
+          >
+            {copied ? (
+              <>
+                <CheckIcon className="size-3 text-success" />
+                <span>{tr("已复制", "Copied")}</span>
+              </>
+            ) : (
+              <>
+                <CopyIcon className="size-3" />
+                <span>{tr("复制", "Copy")}</span>
+              </>
+            )}
+          </button>
+        </div>
       )}
     </div>
   );

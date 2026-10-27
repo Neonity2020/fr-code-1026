@@ -23,12 +23,22 @@ import {
 import type { AttachmentItem, PiThinkingLevel, ThreadId } from "@pi-web/protocol";
 import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useI18n } from "~/i18n";
+import { downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { ComposerSurface } from "./ComposerSurface";
 import { PiModelPicker, PiThinkingPicker } from "./PiModelPicker";
 import { useComposerDraftStore } from "./composerDraftStore";
 import { ComposerMentionPopup, useThreadFiles } from "./ComposerMentionPopup";
+import { ComposerSlashPopup } from "./ComposerSlashPopup";
+import { filterSlashCommands, SLASH_COMMANDS, type SlashCommandItem } from "./composerSlash";
+import { emitChatPanelAction } from "./chatPanelBus";
 
 interface MentionState {
+  query: string;
+  matchStart: number;
+  matchEnd: number;
+}
+
+interface SlashState {
   query: string;
   matchStart: number;
   matchEnd: number;
@@ -82,6 +92,22 @@ export function Composer({
   filteredFilesRef.current = filteredMentionFiles;
   const mentionSelectedIndexRef = useRef(mentionSelectedIndex);
   mentionSelectedIndexRef.current = mentionSelectedIndex;
+
+  // Slash command popup state
+  const [slashState, setSlashState] = useState<SlashState | null>(null);
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+
+  const filteredSlashCommands = useMemo(() => {
+    if (!slashState) return [];
+    return filterSlashCommands(SLASH_COMMANDS, slashState.query);
+  }, [slashState]);
+
+  const slashStateRef = useRef(slashState);
+  slashStateRef.current = slashState;
+  const filteredSlashCommandsRef = useRef(filteredSlashCommands);
+  filteredSlashCommandsRef.current = filteredSlashCommands;
+  const slashSelectedIndexRef = useRef(slashSelectedIndex);
+  slashSelectedIndexRef.current = slashSelectedIndex;
 
   const models = useMemo(() => piStatus?.models ?? [], [piStatus?.models]);
   const effectiveModelSlug =
@@ -203,6 +229,66 @@ export function Composer({
     setMentionState(null);
   };
 
+  const executeSlashCommand = (cmd: SlashCommandItem) => {
+    if (!editor) return;
+    if (slashStateRef.current) {
+      const { matchStart, matchEnd } = slashStateRef.current;
+      editor
+        .chain()
+        .focus()
+        .deleteRange({ from: matchStart, to: matchEnd })
+        .run();
+    }
+    setSlashState(null);
+
+    switch (cmd.id) {
+      case "new": {
+        useAppStore.getState().markNewThreadRequested();
+        transport.dispatch({
+          type: "thread.create",
+          cwd: threadSummary?.cwd ?? useAppStore.getState().defaultCwd ?? "",
+        });
+        break;
+      }
+      case "fork": {
+        useAppStore.getState().markNewThreadRequested();
+        transport.dispatch({
+          type: "thread.fork",
+          sourceThreadId: threadId,
+        });
+        break;
+      }
+      case "changes": {
+        emitChatPanelAction("open-changes");
+        break;
+      }
+      case "terminal": {
+        emitChatPanelAction("open-terminal");
+        break;
+      }
+      case "scripts": {
+        emitChatPanelAction("open-script-output");
+        break;
+      }
+      case "export": {
+        if (threadSummary) {
+          const items = useAppStore.getState().byThread[threadId]?.items ?? [];
+          if (items.length > 0) {
+            downloadThreadAsMarkdown(threadSummary, items);
+          } else {
+            window.open(
+              `/api/thread/export?threadId=${encodeURIComponent(threadId)}&format=markdown`,
+              "_blank",
+            );
+          }
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  };
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false, codeBlock: false }),
@@ -217,6 +303,38 @@ export function Composer({
         "aria-multiline": "true",
       },
       handleKeyDown: (_view, event) => {
+        if (slashStateRef.current && filteredSlashCommandsRef.current.length > 0) {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setSlashSelectedIndex(
+              (prev) => (prev + 1) % filteredSlashCommandsRef.current.length,
+            );
+            return true;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setSlashSelectedIndex(
+              (prev) =>
+                (prev - 1 + filteredSlashCommandsRef.current.length) %
+                filteredSlashCommandsRef.current.length,
+            );
+            return true;
+          }
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            const selected = filteredSlashCommandsRef.current[slashSelectedIndexRef.current];
+            if (selected) {
+              executeSlashCommand(selected);
+              return true;
+            }
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setSlashState(null);
+            return true;
+          }
+        }
+
         if (mentionStateRef.current && filteredFilesRef.current.length > 0) {
           if (event.key === "ArrowDown") {
             event.preventDefault();
@@ -333,17 +451,27 @@ export function Composer({
           "\n",
           "\0",
         );
-        const match = textBefore.match(/(?:^|\s)@([^\s]*)$/);
-        if (match) {
-          const query = match[1]!;
+        const matchMention = textBefore.match(/(?:^|\s)@([^\s]*)$/);
+        const matchSlash = textBefore.match(/(?:^|\n)\/([a-zA-Z0-9_-]*)$/);
+        if (matchMention) {
+          const query = matchMention[1]!;
           const matchStart = from - query.length - 1;
           setMentionState({ query, matchStart, matchEnd: from });
           setMentionSelectedIndex(0);
+          setSlashState(null);
+        } else if (matchSlash) {
+          const query = matchSlash[1]!;
+          const matchStart = from - query.length - 1;
+          setSlashState({ query, matchStart, matchEnd: from });
+          setSlashSelectedIndex(0);
+          setMentionState(null);
         } else {
           setMentionState(null);
+          setSlashState(null);
         }
       } else {
         setMentionState(null);
+        setSlashState(null);
       }
     };
 
@@ -374,6 +502,7 @@ export function Composer({
     clearDraft(threadId);
     setAttachments([]);
     setMentionState(null);
+    setSlashState(null);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -422,6 +551,14 @@ export function Composer({
                 selectedIndex={mentionSelectedIndex}
                 onSelect={insertMentionFile}
                 onClose={() => setMentionState(null)}
+              />
+            )}
+
+            {slashState && (
+              <ComposerSlashPopup
+                commands={filteredSlashCommands}
+                selectedIndex={slashSelectedIndex}
+                onSelect={executeSlashCommand}
               />
             )}
 

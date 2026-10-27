@@ -103,11 +103,14 @@ export class ThreadStore implements PiThreadStorePort {
   }
 
   #persist(threadId: ThreadId, stored: StoredEvent): void {
-    fs.appendFile(
-      path.join(this.#dataDir, `${threadId}.events.jsonl`),
-      `${JSON.stringify(stored)}\n`,
-      () => {},
-    );
+    try {
+      fs.appendFileSync(
+        path.join(this.#dataDir, `${threadId}.events.jsonl`),
+        `${JSON.stringify(stored)}\n`,
+      );
+    } catch {
+      // ignore write failures on shutdown/disk error
+    }
   }
 
   #blankProjection(threadId: ThreadId): ThreadProjection {
@@ -255,6 +258,47 @@ export class ThreadStore implements PiThreadStorePort {
       ...(options?.thinkingLevel !== undefined ? { thinkingLevel: options.thinkingLevel } : {}),
     };
     this.emit(threadId, { type: "thread.created", thread: summary });
+    return summary;
+  }
+
+  forkThread(
+    sourceThreadId: ThreadId,
+    title?: string,
+  ): ThreadSummary {
+    const source = this.#threads.get(sourceThreadId);
+    if (!source) {
+      throw new Error(`Source thread ${sourceThreadId} not found`);
+    }
+    const threadId = `th-${cryptoRandomId()}`;
+    const forkedTitle = title?.trim() || `Fork of ${source.summary.title}`;
+    const now = Date.now();
+    const summary: ThreadSummary = {
+      id: threadId,
+      title: forkedTitle,
+      cwd: source.summary.cwd,
+      status: "idle",
+      createdAt: now,
+      updatedAt: now,
+      ...(source.summary.model ? { model: source.summary.model } : {}),
+      ...(source.summary.thinkingLevel !== undefined ? { thinkingLevel: source.summary.thinkingLevel } : {}),
+      ...(source.summary.branch ? { branch: source.summary.branch } : {}),
+      latestPreview: source.summary.latestPreview,
+    };
+    this.emit(threadId, { type: "thread.created", thread: summary });
+
+    for (const item of source.items.values()) {
+      const clonedItem: TurnItem = {
+        ...item,
+        threadId,
+        id: `ti-${cryptoRandomId()}`,
+      };
+      this.emit(threadId, {
+        type: "turn_item.updated",
+        threadId,
+        turnItem: clonedItem,
+      });
+    }
+
     return summary;
   }
 

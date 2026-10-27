@@ -394,6 +394,81 @@ const server = http.createServer((request, response) => {
     });
     return;
   }
+  if (url.pathname === "/api/thread/export" && request.method === "GET") {
+    const thread = store.get(url.searchParams.get("threadId") ?? "");
+    if (!thread) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+    const format = url.searchParams.get("format") ?? "markdown";
+    const items = [...thread.items.values()].sort((a, b) => a.ordinal - b.ordinal);
+    if (format === "json") {
+      response.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "content-disposition": `attachment; filename="${encodeURIComponent(thread.summary.title || "thread")}.json"`,
+      });
+      response.end(JSON.stringify({ summary: thread.summary, items }, null, 2));
+      return;
+    }
+    const lines: string[] = [
+      `# ${thread.summary.title || "Thread"}`,
+      "",
+      `- **ID**: \`${thread.summary.id}\``,
+      `- **Project**: \`${thread.summary.cwd}\``,
+      `- **Model**: \`${thread.summary.model || "default"}\``,
+      `- **Date**: ${new Date(thread.summary.createdAt).toISOString()}`,
+      "",
+      "---",
+      "",
+    ];
+    for (const item of items) {
+      switch (item.type) {
+        case "user_message":
+          lines.push(`### 👤 User`, "", item.text, "");
+          if (item.attachments && item.attachments.length > 0) {
+            lines.push("**Attachments:**");
+            for (const att of item.attachments) {
+              lines.push(`- \`${att.name}\` (${att.mimeType})`);
+            }
+            lines.push("");
+          }
+          break;
+        case "assistant_message":
+          lines.push(`### 🤖 Assistant`, "", item.text, "");
+          break;
+        case "reasoning":
+          lines.push(`<details>`, `<summary>💭 Thought Process</summary>`, "", item.text, "", `</details>`, "");
+          break;
+        case "command_execution":
+          lines.push(`> ⚡ **Command**: \`${item.input}\``, "");
+          if (item.output) {
+            lines.push("```", item.output, "```", "");
+          }
+          break;
+        case "file_change":
+          lines.push(`> 📝 **File Change**: \`${item.fileName}\``, "");
+          if (item.diffStr) {
+            lines.push("```diff", item.diffStr, "```", "");
+          } else if (item.newStr) {
+            lines.push("```", item.newStr, "```", "");
+          }
+          break;
+        case "dynamic_tool":
+          lines.push(`> 🔧 **Tool**: \`${item.toolName}\``, "");
+          if (item.output) {
+            lines.push("```", item.output, "```", "");
+          }
+          break;
+      }
+    }
+    response.writeHead(200, {
+      "content-type": "text/markdown; charset=utf-8",
+      "content-disposition": `attachment; filename="${encodeURIComponent(thread.summary.title || "thread")}.md"`,
+    });
+    response.end(lines.join("\n"));
+    return;
+  }
   if (url.pathname === "/api/thread/files" && request.method === "GET") {
     const thread = store.get(url.searchParams.get("threadId") ?? "");
     if (!thread) {
@@ -680,6 +755,11 @@ wss.on("connection", (socket) => {
                 model: command.model,
                 thinkingLevel: command.thinkingLevel,
               });
+              send(socket, { kind: "ack", commandId });
+              return;
+            }
+            case "thread.fork": {
+              store.forkThread(command.sourceThreadId, command.title);
               send(socket, { kind: "ack", commandId });
               return;
             }

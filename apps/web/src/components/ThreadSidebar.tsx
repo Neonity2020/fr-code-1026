@@ -3,7 +3,9 @@ import {
   AlarmClockOffIcon,
   CheckIcon,
   CopyIcon,
+  DownloadIcon,
   FolderIcon,
+  GitBranchIcon,
   ListFilterIcon,
   PencilIcon,
   PinIcon,
@@ -25,6 +27,7 @@ import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
+import { downloadThreadAsJson, downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { projectBasename } from "../projectIdentity";
 import { resolveSnoozePresets } from "./Sidebar.snooze";
 import { SettingsSidebarNav } from "./sidebar/SettingsSidebarNav";
@@ -551,6 +554,41 @@ export function ThreadSidebar() {
             setContextMenu(null);
             setRenamingThreadId(id);
           }}
+          onFork={() => {
+            const thread = contextMenu.thread;
+            setContextMenu(null);
+            useAppStore.getState().markNewThreadRequested();
+            transport.dispatch({
+              type: "thread.fork",
+              sourceThreadId: thread.id,
+            });
+          }}
+          onExportMarkdown={() => {
+            const thread = contextMenu.thread;
+            setContextMenu(null);
+            const items = useAppStore.getState().byThread[thread.id]?.items ?? [];
+            if (items.length > 0) {
+              downloadThreadAsMarkdown(thread, items);
+            } else {
+              window.open(
+                `/api/thread/export?threadId=${encodeURIComponent(thread.id)}&format=markdown`,
+                "_blank",
+              );
+            }
+          }}
+          onExportJson={() => {
+            const thread = contextMenu.thread;
+            setContextMenu(null);
+            const items = useAppStore.getState().byThread[thread.id]?.items ?? [];
+            if (items.length > 0) {
+              downloadThreadAsJson(thread, items);
+            } else {
+              window.open(
+                `/api/thread/export?threadId=${encodeURIComponent(thread.id)}&format=json`,
+                "_blank",
+              );
+            }
+          }}
           onFilterByProject={() => {
             const targetCwd = contextMenu.thread.cwd;
             setSelectedProjectCwd(selectedProjectCwd === targetCwd ? null : targetCwd);
@@ -582,6 +620,9 @@ function ThreadRowContextMenu({
   onSettleToggle,
   onSnooze,
   onRename,
+  onFork,
+  onExportMarkdown,
+  onExportJson,
   onFilterByProject,
   onCopyCwd,
   onCopyThreadId,
@@ -594,6 +635,9 @@ function ThreadRowContextMenu({
   onSettleToggle: (settled: boolean) => void;
   onSnooze: (untilMs: number | null) => void;
   onRename: () => void;
+  onFork: () => void;
+  onExportMarkdown: () => void;
+  onExportJson: () => void;
   onFilterByProject: () => void;
   onCopyCwd: () => void;
   onCopyThreadId: () => void;
@@ -660,6 +704,24 @@ function ThreadRowContextMenu({
         icon={<PencilIcon className="size-3.5" />}
         label={tr("重命名线程", "Rename thread")}
         onClick={onRename}
+      />
+
+      <ContextMenuButton
+        icon={<GitBranchIcon className="size-3.5" />}
+        label={tr("分叉线程", "Fork thread")}
+        onClick={onFork}
+      />
+
+      <ContextMenuButton
+        icon={<DownloadIcon className="size-3.5" />}
+        label={tr("导出为 Markdown", "Export as Markdown")}
+        onClick={onExportMarkdown}
+      />
+
+      <ContextMenuButton
+        icon={<DownloadIcon className="size-3.5" />}
+        label={tr("导出为 JSON", "Export as JSON")}
+        onClick={onExportJson}
       />
 
       <ContextMenuButton
