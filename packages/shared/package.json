@@ -22,6 +22,10 @@
     "./markdownIncremental": {
       "types": "./src/markdownIncremental.ts",
       "import": "./src/markdownIncremental.ts"
+    },
+    "./paletteSearch": {
+      "types": "./src/paletteSearch.ts",
+      "import": "./src/paletteSearch.ts"
     }
   },
   "scripts": {
@@ -32,6 +36,7 @@
   },
   "devDependencies": {
     "@types/mdast": "^4.0.4",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@types/node": "^24.12.4"
   }
 }

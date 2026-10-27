@@ -29,6 +29,9 @@ pnpm typecheck
 # 生产：构建前端后由服务端在 6115 端口一并托管
 pnpm build
 pnpm start
+
+# 单元测试（node:test，直接跑 .test.ts）
+pnpm test
 ```
 
 前提：本机已安装并登录 pi CLI（`pi --version`；未安装时应用仍可启动，发送消息会得到明确错误提示）。数据（事件日志 JSONL）存于 `.data/`（gitignored）。可用环境变量：`PORT`（默认 6115）、`PI_WEB_DATA_DIR`、`PI_WEB_DEFAULT_CWD`、`PI_BIN`。
@@ -42,11 +45,17 @@ pnpm start
 | Workspace 包 | 路径 | 职责与内容 | 对齐 t3code 来源 |
 |---|---|---|---|
 | `@pi-web/protocol` | `packages/protocol` | 前后端唯一协议契约：`TurnItem` / `DomainEvent` / `Command` / WS 消息类型 + 投影折叠纯函数（`upsertTurnItem`、`applyTurnItemPreview` 等） | `packages/contracts/src/orchestrationV2.ts` |
-| `@pi-web/shared` | `packages/shared` | 跨端纯函数与通用引擎（子路径导出）：`./themePalettes`（5 套内置主题与 40+ 语义色 role）、`./color`（HSV/Hex 转换）、`./qrCode`（QR 生成）、`./markdownIncremental`（流式增量 Markdown 解析插件） | `packages/shared` + `apps/web/src/markdown-incremental.ts` |
+| `@pi-web/shared` | `packages/shared` | 跨端纯函数与通用引擎（子路径导出）：`./themePalettes`（5 套内置主题与 40+ 语义色 role）、`./color`（HSV/Hex 转换）、`./qrCode`（QR 生成）、`./markdownIncremental`（流式增量 Markdown 解析插件）、`./paletteSearch`（命令面板搜索打分：折叠 / 词首匹配 / 拼写容错 / 分组排序 / 高亮区间） | `packages/shared` + `apps/web/src/markdown-incremental.ts` |
 | `@pi-web/provider-pi` | `packages/provider-pi` | `PiRpcConnection`（LF-JSON 分帧，禁用 `readline` 防 U+2028/U+2029 断行）+ `PiThreadRunner`（pi 事件 → `TurnItem` 领域事件映射，通过 `PiThreadStorePort` 与具体存储解耦） | `packages/provider-pi/src/server/{rpc,adapter}.ts` |
 | `@pi-web/client-runtime` | `packages/client-runtime` | 客户端状态与同步引擎：Zustand 线程投影 Store（`useAppStore`，带 `sequence` 门控去重）+ WS 传输层（`transport`，250ms→30s 指数退避重连 + `afterSequence` 增量续传） | `packages/client-runtime`（去 Effect 化轻量实现） |
 | `@pi-web/server` | `apps/server` | 事件溯源线程存储（`ThreadStore`，JSONL 持久化 + 订阅者快照/增量回放）+ HTTP/WS 网关与静态资源托管 | `apps/server/src/orchestration-v2` 最小等价物 |
 | `@pi-web/web` | `apps/web` | React 19 + Tailwind v4 纯视图层：52 个 `@base-ui/react` 通用 UI 组件、2520 行主题 CSS 与调色板运行时、TipTap 3 Composer、WASM 语法高亮与聊天时间线 | `apps/web`（完全移除 `effect` 依赖） |
+
+## 与 t3code 的对齐点（UI 行为）
+
+- **命令面板**：⌘K / Ctrl+K 唤起，分「命令 / 线程 / 项目」三组；排序与 t3code 共用同一套打分规则（`packages/shared/src/paletteSearch.ts`，移植自 t3code `paletteSearch`），支持词首命中、隐藏关键词、拼写容错与命中高亮。侧边栏搜索框右侧有快捷键提示入口。
+- **外观偏好**：浅色 / 深色 / 跟随系统落盘到 `t3code:theme-appearance-mode`（与 `index.html` 首帧引导脚本同键，避免闪烁），设置页与命令面板共享同一份状态。
+- **聊天面板动作总线**：`components/chat/chatPanelBus.ts` 让命令面板能打开当前线程的终端 / 脚本输出 / 变更抽屉。
 
 ## 与 t3code 的协议对齐点（升级回完整版时的兼容面）
 

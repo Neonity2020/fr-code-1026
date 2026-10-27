@@ -14,10 +14,16 @@ import {
   Undo2Icon,
   XCircleIcon,
 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { transport, useAppStore, type AppLocale } from "@pi-web/client-runtime";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { getSettingsSectionLabel, LOCALE_OPTIONS, useI18n } from "~/i18n";
+import {
+  applyAppearanceMode,
+  readAppearanceMode,
+  subscribeAppearanceMode,
+  type AppearanceMode,
+} from "~/theme/appearancePreference";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { projectBasename } from "../../projectIdentity";
 import { PiModelPicker, PiThinkingPicker } from "../chat/PiModelPicker";
@@ -254,6 +260,8 @@ export function SettingsView() {
   );
   const [scopeProject, setScopeProject] = useState<string>("all");
   const [scopeEnvironment, setScopeEnvironment] = useState<string>("all");
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() => readAppearanceMode());
+  useEffect(() => subscribeAppearanceMode(() => setAppearanceMode(readAppearanceMode())), []);
 
   const updateSetting = <K extends keyof PiSettingsState>(key: K, value: PiSettingsState[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -706,12 +714,15 @@ export function SettingsView() {
                       ] as const
                     ).map((item) => {
                       const Icon = item.icon;
-                      const active = settings.theme === item.id;
+                      const active = appearanceMode === item.id;
                       return (
                         <button
                           key={item.id}
                           type="button"
-                          onClick={() => updateSetting("theme", item.id)}
+                          onClick={() => {
+                            applyAppearanceMode(item.id);
+                            updateSetting("theme", item.id);
+                          }}
                           className={cn(
                             "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                             active

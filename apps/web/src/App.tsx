@@ -25,6 +25,7 @@ import {
   THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
 } from "./components/threadSidebarWidth";
 import { ChatView } from "./components/chat/ChatView";
+import { CommandPalette } from "./components/command-palette/CommandPalette";
 import { SettingsView } from "./components/settings/SettingsView";
 import { Button } from "./components/ui/button";
 import {
@@ -250,6 +251,7 @@ export function App() {
         </SidebarInset>
 
         <SidebarControl />
+        <CommandPalette />
       </SidebarProvider>
     </TooltipProvider>
   );

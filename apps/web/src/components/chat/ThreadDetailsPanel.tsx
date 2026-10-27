@@ -8,6 +8,7 @@ import { Menu, MenuItem, MenuPopup, MenuSearchInput, MenuSeparator, MenuTrigger 
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ProjectScriptsControl } from "./ProjectScriptsControl";
 import { ChangesDialog } from "./ChangesDialog";
+import { subscribeChatPanelActions } from "./chatPanelBus";
 import { shouldPollGitStatus } from "./gitStatusPolling";
 
 interface GitStatus {
@@ -47,6 +48,11 @@ export function ThreadDetailsPanel({ threadId, cwd, running, inline, inlineOpen,
   const dialogOpen = commitDialog || pushDialog || pullDialog || branchDialog || showFiles;
 
   useEffect(() => { if (inline) setPopoverOpen(false); }, [inline]);
+  // 命令面板可以直接打开变更对话框。
+  useEffect(
+    () => subscribeChatPanelActions((action) => { if (action === "open-changes") setShowFiles(true); }),
+    [],
+  );
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/editors", { signal: controller.signal }).then((response) => {

@@ -16,7 +16,7 @@ import {
 } from "react";
 import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useI18n } from "~/i18n";
-import { cn } from "~/lib/utils";
+import { cn, isMacPlatform } from "~/lib/utils";
 import { projectBasename } from "../../projectIdentity";
 import { ProjectIcon } from "../ProjectMonogram";
 import { Button } from "../ui/button";
@@ -147,6 +147,8 @@ export function SidebarThreadHeader({
     filterItems.find((item) => item.cwd === selectedProjectCwd) ?? filterItems[0]!;
 
   const activeThread = threads.find((t) => t.id === activeThreadId);
+  const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen);
+  const paletteShortcutHint = isMacPlatform(navigator.platform) ? "⌘K" : "Ctrl K";
   const currentContextCwd =
     selectedProjectCwd ?? activeThread?.cwd ?? defaultCwd ?? allProjectCwds[0] ?? "/";
 
@@ -233,7 +235,17 @@ export function SidebarThreadHeader({
             >
               <XIcon className="size-3" />
             </Button>
-          ) : null}
+          ) : (
+            // 命令面板入口：与 t3code 一样用快捷键提示引导。
+            <button
+              type="button"
+              onClick={() => setCommandPaletteOpen(true)}
+              title={tr("打开命令面板", "Open command palette")}
+              className="text-sidebar-muted-foreground hover:text-sidebar-foreground shrink-0 rounded border border-sidebar-border px-1 font-mono text-[10px] leading-4"
+            >
+              {paletteShortcutHint}
+            </button>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center">

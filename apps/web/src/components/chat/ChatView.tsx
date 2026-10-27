@@ -18,6 +18,7 @@ import { observeResize } from "~/lib/observeResize";
 import { canShowInlineThreadPanel } from "./threadPanelLayout";
 import { ScriptOutputDrawer } from "./ScriptOutputDrawer";
 import { TerminalDrawer } from "./TerminalDrawer";
+import { subscribeChatPanelActions } from "./chatPanelBus";
 import { ScrollTextIcon, TerminalIcon } from "lucide-react";
 import { Button } from "../ui/button";
 
@@ -37,6 +38,20 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [outputRevision, setOutputRevision] = useState(0);
   useEffect(() => { setOutputOpen(false); setTerminalOpen(false); }, [threadId]);
+  // 命令面板可以要求打开当前线程的终端 / 脚本输出抽屉。
+  useEffect(
+    () =>
+      subscribeChatPanelActions((action) => {
+        if (action === "open-terminal") {
+          setOutputOpen(false);
+          setTerminalOpen(true);
+        } else if (action === "open-script-output") {
+          setTerminalOpen(false);
+          setOutputOpen(true);
+        }
+      }),
+    [],
+  );
   const showScriptOutput = () => { setTerminalOpen(false); setOutputOpen(true); setOutputRevision((value) => value + 1); };
   const inlinePanel = canShowInlineThreadPanel(containerSize.width, containerSize.height);
   useEffect(() => {

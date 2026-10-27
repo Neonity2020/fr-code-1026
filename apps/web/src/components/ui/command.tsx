@@ -5,6 +5,7 @@ import { cn } from "~/lib/utils";
 import {
   Autocomplete,
   AutocompleteCollection,
+  AutocompleteEmpty,
   AutocompleteGroup,
   AutocompleteGroupLabel,
   AutocompleteInput,
@@ -136,6 +137,10 @@ function CommandListVirtualized({
   );
 }
 
+function CommandEmpty({ className, ...props }: React.ComponentProps<typeof AutocompleteEmpty>) {
+  return <AutocompleteEmpty className={className} data-slot="command-empty" {...props} />;
+}
+
 function CommandListHeading({
   className,
   ...props
@@ -242,6 +247,7 @@ export {
   CommandDialog,
   CommandDialogPopup,
   CommandDialogTrigger,
+  CommandEmpty,
   CommandFooter,
   CommandFooterAction,
   CommandGroup,

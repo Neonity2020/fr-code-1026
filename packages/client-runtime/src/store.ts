@@ -107,6 +107,8 @@ export interface AppStore {
   locale: AppLocale;
   /** 「新建线程」意图：下一个 thread.created 事件到达时自动选中 */
   newThreadRequested: boolean;
+  /** 命令面板是否打开（侧边栏与快捷键共用同一个入口） */
+  commandPaletteOpen: boolean;
 
   setConnection(connection: ConnectionStatus): void;
   setLocale(locale: AppLocale): void;
@@ -121,6 +123,7 @@ export interface AppStore {
   setSelectedModel(model: string, thinkingLevel?: PiThinkingLevel | null): void;
   setActiveThread(threadId: ThreadId | null): void;
   markNewThreadRequested(): void;
+  setCommandPaletteOpen(open: boolean): void;
   setThreadStatus(threadId: ThreadId, status: ThreadLiveStatus): void;
   applySnapshot(threadId: ThreadId, snapshotSequence: number, items: TurnItem[]): void;
   /** 按序号去重折叠事件（对齐 t3code applyItems 的 sequence 门控） */
@@ -149,6 +152,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   selectedThinkingLevel: null,
   locale: readInitialLocale(),
   newThreadRequested: false,
+  commandPaletteOpen: false,
 
   setConnection: (connection) => set({ connection }),
   setLocale: (locale) => {
@@ -203,6 +207,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ activeThreadId: threadId, activeUtilityPage: null });
   },
   markNewThreadRequested: () => set({ newThreadRequested: true }),
+  setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
   setThreadStatus: (threadId, status) =>
     set((state) => ({
       byThread: {

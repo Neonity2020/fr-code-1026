@@ -1,18 +1,15 @@
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/inter";
 import { App } from "./App";
-import { applyThemePalette } from "./theme/themePalette";
+import { refreshAppearance } from "./theme/appearancePreference";
 import { transport } from "@pi-web/client-runtime";
 import "./index.css";
 
-// 默认 t3-chat 主题；light/dark 跟随系统（index.html 引导脚本先打 .dark class，
-// 这里按同一条件把 appearance 传给调色板）。对齐 t3code useTheme 的行为。
+// 默认 t3-chat 主题；外观（浅色 / 深色 / 跟随系统）来自本地偏好，
+// 系统配色变化时重新解析。对齐 t3code themeBoot / appearance 的行为。
+refreshAppearance();
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
-function applyTheme() {
-  applyThemePalette("t3-chat", prefersDark.matches ? "dark" : "light");
-}
-applyTheme();
-prefersDark.addEventListener("change", applyTheme);
+prefersDark.addEventListener("change", refreshAppearance);
 
 transport.start();
 
