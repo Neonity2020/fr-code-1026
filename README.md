@@ -16,22 +16,32 @@
 
 ## 运行
 
+项目全面支持 **Bun** 构建与运行时（推荐），同时也保持与 Node / pnpm 兼容：
+
 ```bash
-pnpm install
+# 1. 安装依赖（自动配置工作区并打入 @pierre/diffs 补丁）
+bun install
 
-# 开发：终端 1 起服务端（6115），终端 2 起 vite（6116，已代理 /api 与 /ws）
-pnpm dev        # = apps/server dev (tsx watch)
-pnpm dev:web    # = apps/web dev (vite)
+# 2. 开发环境：
+# 终端 1 启动后端服务（端口 6115，Bun 原生监听 TypeScript 源码变更）
+bun dev
 
-# 全量类型检查（覆盖 6 个 workspace 包）
-pnpm typecheck
+# 终端 2 启动前端热重载（端口 6116，Vite 自动反代 API 与 WebSocket）
+bun dev:web
 
-# 生产：构建前端后由服务端在 6115 端口一并托管
-pnpm build
-pnpm start
+# 3. 全量类型检查（tsc 严格检查根与全部 6 个 workspace 包）
+bun run typecheck
 
-# 单元测试（node:test，直接跑 .test.ts）
-pnpm test
+# 4. 生产构建（Vite 编译前端生产静态资源到 apps/web/dist）
+bun run build
+
+# 5. 生产运行（服务端单端口 6115 托管完整 SPA 与 RPC 协议）
+bun run start
+
+# 6. 运行全量单元测试（54 个用例全部通过）
+bun test
+# 或使用 Node 原生测试运行器
+bun run test:node
 ```
 
 前提：本机已安装并登录 pi CLI（`pi --version`；未安装时应用仍可启动，发送消息会得到明确错误提示）。数据（事件日志 JSONL）存于 `.data/`（gitignored）。可用环境变量：`PORT`（默认 6115）、`PI_WEB_DATA_DIR`、`PI_WEB_DEFAULT_CWD`、`PI_BIN`。

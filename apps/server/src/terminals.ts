@@ -12,8 +12,14 @@ export class Terminals {
   connect(threadId: string, cwd: string, listener: (message: { type: "output"; data: string } | { type: "exit"; code: number }) => void) {
     let session = this.sessions.get(threadId);
     if (!session) {
-      const shell = process.platform === "win32" ? (process.env.COMSPEC || "cmd.exe") : (process.env.SHELL || "/bin/sh");
-      const terminal = pty.spawn(shell, [], { name: "xterm-256color", cols: 80, rows: 24, cwd, env: { ...process.env, TERM: "xterm-256color" } as Record<string, string> });
+      const shell = process.env.PI_WEB_SHELL || (process.platform === "win32" ? (process.env.COMSPEC || "cmd.exe") : (process.env.SHELL || "/bin/sh"));
+      const terminal = pty.spawn(shell, [], {
+        name: "xterm-256color",
+        cols: 80,
+        rows: 24,
+        cwd,
+        env: { ...process.env, HISTFILE: "/dev/null", TERM: "xterm-256color" } as Record<string, string>,
+      });
       session = { terminal, output: "", listeners: new Set() };
       this.sessions.set(threadId, session);
       const active = session;
