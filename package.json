@@ -7,7 +7,7 @@
     "dev:web": "pnpm --filter @pi-web/web dev",
     "build": "pnpm --filter @pi-web/web build",
     "start": "NODE_ENV=production pnpm --filter @pi-web/server start",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "tsc",
     "test": "node --test \"apps/*/src/**/*.test.ts\" \"packages/*/src/**/*.test.ts\""
   },
   "devDependencies": {

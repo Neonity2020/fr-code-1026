@@ -257,9 +257,15 @@ export async function discoverPiModels(cwd = process.cwd()): Promise<{
 }
 
 let cachedPiStatus: PiStatus | undefined;
+let cachedPiStatusAt = 0;
 
-export async function checkPiStatus(piBin = process.env.PI_BIN ?? "pi"): Promise<PiStatus> {
-  if (cachedPiStatus) return cachedPiStatus;
+export async function checkPiStatus(
+  piBin = process.env.PI_BIN ?? "pi",
+  force = false,
+): Promise<PiStatus> {
+  const now = Date.now();
+  const ttl = cachedPiStatus?.installed ? 60_000 : 5_000;
+  if (!force && cachedPiStatus && now - cachedPiStatusAt < ttl) return cachedPiStatus;
   const versionStatus = await new Promise<PiStatus>((resolve) => {
     execFile(piBin, ["--version"], { timeout: 5_000 }, (error, stdout) => {
       resolve(
@@ -270,6 +276,7 @@ export async function checkPiStatus(piBin = process.env.PI_BIN ?? "pi"): Promise
     });
   });
 
+  cachedPiStatusAt = Date.now();
   if (!versionStatus.installed) {
     cachedPiStatus = versionStatus;
     return cachedPiStatus;

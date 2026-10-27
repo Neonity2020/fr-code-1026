@@ -258,14 +258,20 @@ const runnerFor = (threadId: string): PiThreadRunner | undefined => {
 // ---------- HTTP ----------
 
 const MIME: Record<string, string> = {
-  ".html": "text/html",
-  ".js": "text/javascript",
-  ".css": "text/css",
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
   ".ico": "image/x-icon",
-  ".json": "application/json",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
   ".woff2": "font/woff2",
+  ".wasm": "application/wasm",
+  ".txt": "text/plain; charset=utf-8",
 };
 
 const server = http.createServer((request, response) => {
@@ -276,7 +282,8 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (url.pathname === "/api/config") {
-    void checkPiStatus().then((pi) => {
+    const force = url.searchParams.get("refresh") === "1" || url.searchParams.get("force") === "true";
+    void checkPiStatus(process.env.PI_BIN ?? "pi", force).then((pi) => {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ defaultCwd, homeDir, projects: store.listProjects(), pi }));
     });
@@ -932,8 +939,12 @@ wss.on("connection", (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`[pi-web] server listening on http://localhost:${PORT}`);
-  console.log(`[pi-web] data dir: ${dataDir}`);
-  console.log(`[pi-web] web dist: ${webDist} (${fs.existsSync(webDist) ? "found" : "missing, run: pnpm --filter @pi-web/web build"})`);
-});
+if (process.env.NODE_ENV !== "test") {
+  server.listen(PORT, () => {
+    console.log(`[pi-web] server listening on http://localhost:${PORT}`);
+    console.log(`[pi-web] data dir: ${dataDir}`);
+    console.log(`[pi-web] web dist: ${webDist} (${fs.existsSync(webDist) ? "found" : "missing, run: pnpm --filter @pi-web/web build"})`);
+  });
+}
+
+export { server, store, PORT };

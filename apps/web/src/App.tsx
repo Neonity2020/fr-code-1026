@@ -79,6 +79,34 @@ function SidebarControl() {
         toggleSidebar();
         return;
       }
+      // Alt+ArrowUp / Alt+ArrowDown: cycle active threads
+      if (event.altKey && !mod && !event.shiftKey && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+        const target = event.target;
+        const inEditable =
+          target instanceof HTMLElement &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable);
+        if (!inEditable) {
+          event.preventDefault();
+          event.stopPropagation();
+          const state = useAppStore.getState();
+          const threadList = state.threads.filter((t) => !t.settledAt && !t.snoozedUntil);
+          if (threadList.length > 0) {
+            const currentIdx = threadList.findIndex((t) => t.id === state.activeThreadId);
+            if (currentIdx === -1) {
+              state.setActiveThread(threadList[0]!.id);
+            } else if (event.key === "ArrowDown") {
+              const next = threadList[(currentIdx + 1) % threadList.length]!;
+              state.setActiveThread(next.id);
+            } else {
+              const prev = threadList[(currentIdx - 1 + threadList.length) % threadList.length]!;
+              state.setActiveThread(prev.id);
+            }
+          }
+          return;
+        }
+      }
       if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "z") {
         const undoNotice = useAppStore.getState().undoNotice;
         if (undoNotice && isSidebarVisible) {

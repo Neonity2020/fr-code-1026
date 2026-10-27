@@ -54,6 +54,7 @@ export function TurnItemRow({ item }: { item: TurnItem }) {
     case "approval_request":
       return (
         <ApprovalRow
+          threadId={item.threadId}
           requestId={item.requestId}
           title={item.title}
           message={item.message}
@@ -617,11 +618,13 @@ function ReasoningRow({ text, streaming }: { text: string; streaming: boolean })
 }
 
 function ApprovalRow({
+  threadId,
   requestId,
   title,
   message,
   status,
 }: {
+  threadId: string;
   requestId: string;
   title: string;
   message?: string;
@@ -633,7 +636,7 @@ function ApprovalRow({
       type: "approval.respond",
       requestId,
       decision,
-      threadId: useAppStore.getState().activeThreadId ?? "",
+      threadId,
     });
   };
   if (status !== "waiting") {
