@@ -1,10 +1,14 @@
 /**
  * TurnItem 行渲染器。视觉语言对齐 t3code 的时间线：
- * 用户消息 = 主题色块；助手消息 = markdown 直排；工具行 = 可折叠的等宽卡片；
- * 审批卡 = 带 Accept/Decline 的操作面板。
+ * - 用户消息 = 主题色块；
+ * - 助手消息 = markdown 直排；
+ * - 工作条目（命令 / 文件改动 / 工具调用）= 扁平的工作日志行（图标 + 文本 + 状态），
+ *   展开后缩进显示输出；连续的工作条目会折叠成一行摘要（见 timelineGrouping.ts）；
+ * - 审批卡 = 带 Accept/Decline 的操作面板。
  */
 import { useState } from "react";
 import {
+  BrainIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleCheckIcon,
@@ -18,6 +22,14 @@ import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { WorkLogButton, WorkLogDetails } from "./WorkLog";
+import {
+  formatDurationLabel,
+  workGroupDuration,
+  type ReasoningTurnItem,
+  type WorkGroupSummary,
+  type WorkTurnItem,
+} from "./timelineGrouping";
 
 export function TurnItemRow({ item }: { item: TurnItem }) {
   switch (item.type) {
@@ -28,46 +40,18 @@ export function TurnItemRow({ item }: { item: TurnItem }) {
     case "reasoning":
       return <ReasoningRow text={item.text} streaming={item.streaming === true} />;
     case "command_execution":
-      return (
-        <ToolRow
-          icon={<TerminalIcon className="size-3.5" />}
-          title={item.input.split("\n")[0]?.slice(0, 120) || item.title}
-          status={item.status}
-          output={item.output}
-          exitCode={item.exitCode}
-          mono
-        >
-          {item.input}
-        </ToolRow>
-      );
     case "file_change":
-      return (
-        <ToolRow
-          icon={<FileDiffIcon className="size-3.5" />}
-          title={item.fileName}
-          status={item.status}
-          output={renderDiffText(item)}
-        >
-          {null}
-        </ToolRow>
-      );
     case "dynamic_tool":
-      return (
-        <ToolRow
-          icon={<WrenchIcon className="size-3.5" />}
-          title={item.title}
-          status={item.status}
-          output={item.output}
-        >
-          {item.input === undefined ? null : (
-            <pre className="text-2xs text-muted-foreground overflow-x-auto">
-              {JSON.stringify(item.input, null, 2)}
-            </pre>
-          )}
-        </ToolRow>
-      );
+      return <WorkRow item={item} />;
     case "approval_request":
-      return <ApprovalRow requestId={item.requestId} title={item.title} message={item.message} status={item.status} />;
+      return (
+        <ApprovalRow
+          requestId={item.requestId}
+          title={item.title}
+          message={item.message}
+          status={item.status}
+        />
+      );
     case "error":
       return (
         <div className="bg-error-surface text-error-foreground flex items-start gap-2 rounded-lg px-3 py-2 text-xs">
@@ -91,6 +75,278 @@ export function TurnItemRow({ item }: { item: TurnItem }) {
   }
 }
 
+/** 连续工作条目的折叠行（对齐 t3code work-toggle 行）。 */
+export function WorkGroupRow({
+  items,
+  summary,
+}: {
+  items: readonly WorkTurnItem[];
+  summary: WorkGroupSummary;
+}) {
+  const [open, setOpen] = useState(false);
+  const { tr } = useI18n();
+
+  const label = workGroupLabel(summary, tr);
+  const duration = workGroupDuration(summary);
+  const icon =
+    summary.counts.command > 0 ? (
+      <TerminalIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />
+    ) : summary.counts.file_change > 0 ? (
+      <FileDiffIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />
+    ) : (
+      <WrenchIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />
+    );
+
+  return (
+    <div className="my-0.5">
+      <WorkLogButton
+        icon={icon}
+        label={
+          <span className="flex min-w-0 items-center gap-1.5">
+            {open ? (
+              <ChevronDownIcon className="size-3.5 shrink-0 text-icon-muted" />
+            ) : (
+              <ChevronRightIcon className="size-3.5 shrink-0 text-icon-muted" />
+            )}
+            <span className="truncate">{label}</span>
+          </span>
+        }
+        trailing={
+          <span className="flex shrink-0 items-center gap-2">
+            {duration !== null ? (
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {formatDurationLabel(duration)}
+              </span>
+            ) : null}
+            {summary.hasFailure ? <CircleXIcon className="text-error size-3.5" /> : null}
+            {summary.running ? <RunningIndicator /> : null}
+          </span>
+        }
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen((previous) => !previous)}
+      />
+      {open ? (
+        <WorkLogDetails kind="panel">
+          <div className="ms-1 flex flex-col gap-0.5">
+            {items.map((item) => (
+              <WorkRow key={item.id} item={item} nested />
+            ))}
+          </div>
+        </WorkLogDetails>
+      ) : null}
+    </div>
+  );
+}
+
+/** 连续思考条目的折叠行（对齐 t3code 的 “Thought (×N)”）。 */
+export function ReasoningGroupRow({ items }: { items: readonly ReasoningTurnItem[] }) {
+  const [open, setOpen] = useState(false);
+  const { tr } = useI18n();
+  const streaming = items.some((item) => item.streaming === true);
+  const label = streaming
+    ? tr("思考中…", "Thinking…")
+    : tr(`思考过程 (×${items.length})`, `Thought (×${items.length})`);
+
+  return (
+    <div className="my-0.5">
+      <WorkLogButton
+        icon={<BrainIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />}
+        label={
+          <span className="flex min-w-0 items-center gap-1.5">
+            {open ? (
+              <ChevronDownIcon className="size-3.5 shrink-0 text-icon-muted" />
+            ) : (
+              <ChevronRightIcon className="size-3.5 shrink-0 text-icon-muted" />
+            )}
+            <span className="truncate">{label}</span>
+          </span>
+        }
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen((previous) => !previous)}
+      />
+      {open ? (
+        <WorkLogDetails kind="panel">
+          <div className="ms-1 flex flex-col gap-0.5">
+            {items.map((item) => (
+              <ReasoningRow key={item.id} text={item.text} streaming={item.streaming === true} />
+            ))}
+          </div>
+        </WorkLogDetails>
+      ) : null}
+    </div>
+  );
+}
+
+function workGroupLabel(
+  summary: WorkGroupSummary,
+  tr: (zh: string, en: string) => string,
+): string {
+  const parts: string[] = [];
+  if (summary.counts.command > 0) {
+    const count = summary.counts.command;
+    parts.push(
+      tr(
+        `运行了 ${count} 条命令`,
+        count === 1 ? "Ran a command" : `Ran ${count} commands`,
+      ),
+    );
+  }
+  if (summary.counts.file_change > 0) {
+    const count = summary.counts.file_change;
+    parts.push(
+      tr(
+        `修改了 ${count} 个文件`,
+        count === 1 ? "Changed a file" : `Changed ${count} files`,
+      ),
+    );
+  }
+  if (summary.counts.tool > 0) {
+    const count = summary.counts.tool;
+    parts.push(
+      tr(
+        `调用了 ${count} 个工具`,
+        count === 1 ? "Used a tool" : `Used ${count} tools`,
+      ),
+    );
+  }
+  return parts.join(tr(" · ", " · "));
+}
+
+/** 单个工作条目：命令 / 文件改动 / 工具调用。 */
+function WorkRow({ item, nested = false }: { item: WorkTurnItem; nested?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { tr } = useI18n();
+
+  const label = workItemLabel(item, tr);
+  const detail = workItemDetail(item);
+  const icon = workItemIcon(item);
+  const hasBody = detail !== null;
+
+  return (
+    <div className={cn("my-0.5", nested && "py-0")}>
+      <WorkLogButton
+        icon={icon}
+        label={
+          <span className="flex min-w-0 items-center gap-1.5">
+            {hasBody ? (
+              open ? (
+                <ChevronDownIcon className="size-3.5 shrink-0 text-icon-muted" />
+              ) : (
+                <ChevronRightIcon className="size-3.5 shrink-0 text-icon-muted" />
+              )
+            ) : null}
+            <span className={cn("truncate", item.type === "command_execution" && "font-mono text-xs")}>
+              {label}
+            </span>
+          </span>
+        }
+        trailing={
+          <WorkStatusTrailing
+            status={item.status}
+            exitCode={item.type === "command_execution" ? item.exitCode : undefined}
+          />
+        }
+        aria-expanded={hasBody ? open : undefined}
+        aria-label={label}
+        onClick={() => {
+          if (!hasBody) return;
+          setOpen((previous) => !previous);
+        }}
+      />
+      {open && hasBody ? (
+        <WorkLogDetails>
+          <pre className="text-2xs text-muted-foreground font-mono whitespace-pre-wrap break-all">
+            {detail}
+          </pre>
+        </WorkLogDetails>
+      ) : null}
+    </div>
+  );
+}
+
+function workItemIcon(item: WorkTurnItem) {
+  switch (item.type) {
+    case "command_execution":
+      return <TerminalIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />;
+    case "file_change":
+      return <FileDiffIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />;
+    default:
+      return <WrenchIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />;
+  }
+}
+
+function workItemLabel(
+  item: WorkTurnItem,
+  tr: (zh: string, en: string) => string,
+): string {
+  switch (item.type) {
+    case "command_execution": {
+      const command = item.input.split("\n")[0]?.trim();
+      return command && command.length > 0 ? command : item.title;
+    }
+    case "file_change":
+      return item.fileName || item.title;
+    default:
+      return item.title || tr("工具调用", "Tool call");
+  }
+}
+
+/** 展开后显示的内容：命令输出 / diff / 工具入参。 */
+function workItemDetail(item: WorkTurnItem): string | null {
+  if (item.type === "command_execution") {
+    const output = item.output?.trim();
+    if (output) return output;
+    const input = item.input.trim();
+    return input.length > 0 ? input : null;
+  }
+  if (item.type === "file_change") {
+    if (item.diffStr !== undefined && item.diffStr.trim().length > 0) return item.diffStr;
+    if (item.newStr !== undefined && item.newStr.length > 0) {
+      return item.newStr.split("\n").map((line) => `+ ${line}`).join("\n");
+    }
+    return null;
+  }
+  if (item.output !== undefined && item.output.trim().length > 0) return item.output;
+  if (item.input !== undefined) return JSON.stringify(item.input, null, 2);
+  return null;
+}
+
+function WorkStatusTrailing({
+  status,
+  exitCode,
+}: {
+  status: TurnItem["status"];
+  exitCode?: number;
+}) {
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      {exitCode !== undefined && exitCode !== 0 ? (
+        <span className="text-error text-2xs">exit {exitCode}</span>
+      ) : null}
+      {status === "running" ? <RunningIndicator /> : null}
+      {status === "completed" ? <CircleCheckIcon className="text-success size-3.5" /> : null}
+      {status === "failed" ? <CircleXIcon className="text-error size-3.5" /> : null}
+      {status === "cancelled" ? (
+        <span className="bg-muted-foreground size-2 rounded-full" aria-hidden />
+      ) : null}
+      {status === "waiting" ? (
+        <span className="bg-warning size-2 rounded-full" aria-hidden />
+      ) : null}
+    </span>
+  );
+}
+
+function RunningIndicator() {
+  return (
+    <span
+      className="border-primary border-t-primary/30 size-3 animate-spin rounded-full border-2"
+      aria-hidden
+    />
+  );
+}
+
 function UserMessageRow({ text }: { text: string }) {
   return (
     <div className="mt-3 flex justify-end first:mt-0">
@@ -105,7 +361,9 @@ function AssistantMessageRow({ text, streaming }: { text: string; streaming: boo
   return (
     <div className="py-1">
       <ChatMarkdown text={text} />
-      {streaming && <span className="bg-foreground ml-0.5 inline-block h-3.5 w-[2px] animate-pulse align-middle" />}
+      {streaming && (
+        <span className="bg-foreground ml-0.5 inline-block h-3.5 w-[2px] animate-pulse align-middle" />
+      )}
     </div>
   );
 }
@@ -113,87 +371,26 @@ function AssistantMessageRow({ text, streaming }: { text: string; streaming: boo
 function ReasoningRow({ text, streaming }: { text: string; streaming: boolean }) {
   const [open, setOpen] = useState(false);
   const { tr } = useI18n();
-  if (text.trim().length === 0) return null;
+  if (text.trim().length === 0 && !streaming) return null;
   return (
-    <div className="text-muted-foreground py-0.5">
-      <button
-        type="button"
+    <div className="my-0.5">
+      <WorkLogButton
+        icon={<BrainIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />}
+        label={
+          <span className="truncate">
+            {streaming ? tr("思考中…", "Thinking…") : tr("思考过程", "Thought process")}
+          </span>
+        }
+        aria-expanded={open}
         onClick={() => setOpen((previous) => !previous)}
-        className="hover:text-foreground flex items-center gap-1 text-2xs"
-      >
-        {open ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
-        {streaming ? tr("思考中…", "Thinking…") : tr("思考过程", "Thought process")}
-      </button>
-      {open && <div className="mt-1 border-l border-border pl-3 text-xs whitespace-pre-wrap">{text}</div>}
+      />
+      {open ? (
+        <WorkLogDetails>
+          <p className="text-muted-foreground text-xs whitespace-pre-wrap">{text}</p>
+        </WorkLogDetails>
+      ) : null}
     </div>
   );
-}
-
-const STATUS_ICON = {
-  running: <span className="border-primary border-t-primary/30 size-3 animate-spin rounded-full border-2" />,
-  waiting: <span className="bg-warning size-2 rounded-full" />,
-  completed: <CircleCheckIcon className="text-success size-3.5" />,
-  failed: <CircleXIcon className="text-error size-3.5" />,
-  cancelled: <span className="bg-muted-foreground size-2 rounded-full" />,
-  interrupted: <span className="bg-warning size-2 rounded-full" />,
-} as const;
-
-function ToolRow({
-  icon,
-  title,
-  status,
-  output,
-  exitCode,
-  mono,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  status: TurnItem["status"];
-  output?: string;
-  exitCode?: number;
-  mono?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const hasBody = children !== null || (output !== undefined && output.trim().length > 0);
-  return (
-    <div className="bg-code/40 my-0.5 overflow-hidden rounded-lg border border-border">
-      <button
-        type="button"
-        onClick={() => hasBody && setOpen((previous) => !previous)}
-        className={cn(
-          "flex w-full items-center gap-2 px-3 py-1.5 text-left",
-          hasBody && "cursor-pointer hover:bg-sidebar-row-hover",
-        )}
-      >
-        <span className="text-muted-foreground">{icon}</span>
-        <span className={cn("text-xs truncate", mono && "font-mono")}>{title}</span>
-        {exitCode !== undefined && exitCode !== 0 && (
-          <span className="text-error text-2xs">exit {exitCode}</span>
-        )}
-        <span className="ml-auto flex items-center gap-1.5">{STATUS_ICON[status]}</span>
-      </button>
-      {open && (
-        <div className="border-border border-t px-3 py-2">
-          {children}
-          {output !== undefined && output.trim().length > 0 && (
-            <pre className="text-2xs text-muted-foreground max-h-64 overflow-auto font-mono whitespace-pre-wrap">
-              {output}
-            </pre>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function renderDiffText(item: Extract<TurnItem, { type: "file_change" }>): string | undefined {
-  if (item.diffStr !== undefined && item.diffStr.trim().length > 0) return item.diffStr;
-  if (item.newStr !== undefined && item.newStr.length > 0) {
-    return item.newStr.split("\n").map((line) => `+ ${line}`).join("\n");
-  }
-  return undefined;
 }
 
 function ApprovalRow({
@@ -209,7 +406,12 @@ function ApprovalRow({
 }) {
   const { tr } = useI18n();
   const respond = (decision: "accept" | "decline") => {
-    transport.dispatch({ type: "approval.respond", requestId, decision, threadId: useAppStore.getState().activeThreadId ?? "" });
+    transport.dispatch({
+      type: "approval.respond",
+      requestId,
+      decision,
+      threadId: useAppStore.getState().activeThreadId ?? "",
+    });
   };
   if (status !== "waiting") {
     return (

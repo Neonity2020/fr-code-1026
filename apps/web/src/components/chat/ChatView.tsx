@@ -12,14 +12,15 @@ import { ProjectIcon } from "../ProjectMonogram";
 import { useSidebarVisibility } from "../ui/sidebar";
 import { Composer } from "./Composer";
 import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
-import { TurnItemRow } from "./TurnItemRows";
+import { ReasoningGroupRow, TurnItemRow, WorkGroupRow } from "./TurnItemRows";
+import { groupTimelineItems } from "./timelineGrouping";
 import { ThreadDetailsPanel } from "./ThreadDetailsPanel";
 import { observeResize } from "~/lib/observeResize";
 import { canShowInlineThreadPanel } from "./threadPanelLayout";
 import { ScriptOutputDrawer } from "./ScriptOutputDrawer";
 import { TerminalDrawer } from "./TerminalDrawer";
 import { subscribeChatPanelActions } from "./chatPanelBus";
-import { ScrollTextIcon, TerminalIcon } from "lucide-react";
+import { ArrowDownIcon, ScrollTextIcon, TerminalIcon } from "lucide-react";
 import { Button } from "../ui/button";
 
 export function ChatView({ threadId }: { threadId: ThreadId }) {
@@ -150,6 +151,9 @@ function MessageTimeline({ items, running }: { items: TurnItem[]; running: boole
     [lastItem],
   );
 
+  // 连续的工作条目折叠成一行摘要（对齐 t3code work group rows）。
+  const rows = useMemo(() => groupTimelineItems(items), [items]);
+
   // 滚动锚定：贴底时新内容自动下滚（对齐 t3code timelineScrollAnchoring 的行为）
   useEffect(() => {
     if (pinnedToBottom) {
@@ -162,29 +166,53 @@ function MessageTimeline({ items, running }: { items: TurnItem[]; running: boole
   );
 
   return (
-    <div
-      ref={scrollRef}
-      onScroll={(event) => {
-        const el = event.currentTarget;
-        setPinnedToBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 48);
-      }}
-      className="min-h-0 flex-1 overflow-y-auto"
-    >
-      <div className="chat-composer-lane mx-auto flex max-w-(--chat-content-max-width) flex-col gap-1 px-4 py-6">
-        {items.map((item) => (
-          <TurnItemRow key={item.id} item={item} />
-        ))}
-        {running && !pendingApproval && items.at(-1)?.type !== "assistant_message" && (
-          <div className="text-muted-foreground animate-pulse py-2 text-xs">
-            {tr("Pi 正在思考与执行…", "pi is working…")}
-          </div>
-        )}
-        {pendingApproval && pendingApproval.type === "approval_request" && (
-          <div className="text-warning mt-2 text-2xs">
-            {tr("等待你确认后 Pi 才会继续。", "Waiting for your approval before Pi continues.")}
-          </div>
-        )}
+    <div className="relative min-h-0 flex-1">
+      <div
+        ref={scrollRef}
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          setPinnedToBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 48);
+        }}
+        className="h-full overflow-y-auto"
+      >
+        <div className="chat-composer-lane mx-auto flex max-w-(--chat-content-max-width) flex-col gap-1 px-4 py-6">
+          {rows.map((row) => {
+            if (row.kind === "work_group") {
+              return <WorkGroupRow key={row.key} items={row.items} summary={row.summary} />;
+            }
+            if (row.kind === "reasoning_group") {
+              // 连续的思考条目：折叠成一行，展开后逐条显示。
+              return <ReasoningGroupRow key={row.key} items={row.items} />;
+            }
+            return <TurnItemRow key={row.key} item={row.item} />;
+          })}
+          {running && !pendingApproval && items.at(-1)?.type !== "assistant_message" && (
+            <div className="text-muted-foreground animate-pulse py-2 text-xs">
+              {tr("Pi 正在思考与执行…", "pi is working…")}
+            </div>
+          )}
+          {pendingApproval && pendingApproval.type === "approval_request" && (
+            <div className="text-warning mt-2 text-2xs">
+              {tr("等待你确认后 Pi 才会继续。", "Waiting for your approval before Pi continues.")}
+            </div>
+          )}
+        </div>
       </div>
+      {!pinnedToBottom ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon-sm"
+          aria-label={tr("回到底部", "Scroll to bottom")}
+          title={tr("回到底部", "Scroll to bottom")}
+          onClick={() => {
+            scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+          }}
+          className="absolute right-6 bottom-3 z-10 shadow-md"
+        >
+          <ArrowDownIcon />
+        </Button>
+      ) : null}
     </div>
   );
 }

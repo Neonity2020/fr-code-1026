@@ -54,6 +54,10 @@ pnpm test
 ## 与 t3code 的对齐点（UI 行为）
 
 - **命令面板**：⌘K / Ctrl+K 唤起，分「命令 / 线程 / 项目」三组；排序与 t3code 共用同一套打分规则（`packages/shared/src/paletteSearch.ts`，移植自 t3code `paletteSearch`），支持词首命中、隐藏关键词、拼写容错与命中高亮。侧边栏搜索框右侧有快捷键提示入口。
+- **时间线工作分组**：连续的命令执行 / 文件改动 / 工具调用折叠成一行摘要（“运行了 3 条命令 · 修改了 2 个文件”，对齐 t3code `summarizeToolGroup`），连续思考折叠成 “思考过程 (×N)”；单个工作条目保持单行，展开后缩进显示输出。分组逻辑在 `components/chat/timelineGrouping.ts`（纯函数 + 单测）。
+- **工作日志行**：移植 t3code `WorkLog.tsx` 的呈现原语（扁平行：图标 + 文本 + 状态，展开详情缩进 `ms-7`）。
+- **代码块**：头部显示语言标签 + 复制按钮 + 自动换行开关（对齐 t3code `MarkdownCodeBlock`）。
+- **输入草稿**：按线程持久化未发送内容，切换线程不再丢输入（对齐 t3code `composerDraftStore`）。
 - **外观偏好**：浅色 / 深色 / 跟随系统落盘到 `t3code:theme-appearance-mode`（与 `index.html` 首帧引导脚本同键，避免闪烁），设置页与命令面板共享同一份状态。
 - **聊天面板动作总线**：`components/chat/chatPanelBus.ts` 让命令面板能打开当前线程的终端 / 脚本输出 / 变更抽屉。
 

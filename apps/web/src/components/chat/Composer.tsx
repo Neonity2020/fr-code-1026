@@ -4,7 +4,7 @@
  * 视觉对齐 t3code 新线程 hero 态。mention、上下文 chip、附件上传等完整能力
  * 后续按 components/chat/ChatComposer.tsx 渐进移植。
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -20,6 +20,7 @@ import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useI18n } from "~/i18n";
 import { ComposerSurface } from "./ComposerSurface";
 import { PiModelPicker, PiThinkingPicker } from "./PiModelPicker";
+import { useComposerDraftStore } from "./composerDraftStore";
 
 export function Composer({
   threadId,
@@ -168,6 +169,29 @@ export function Composer({
     }
   }, [autoFocus, editor]);
 
+  // 草稿：挂载时恢复未发送的内容，编辑时保存（对齐 t3code composerDraftStore）。
+  const restoredDraftRef = useRef(false);
+  const setDraft = useComposerDraftStore((state) => state.setDraft);
+  const clearDraft = useComposerDraftStore((state) => state.clearDraft);
+
+  useEffect(() => {
+    if (!editor || restoredDraftRef.current) return;
+    restoredDraftRef.current = true;
+    const saved = useComposerDraftStore.getState().getDraft(threadId);
+    if (saved.length > 0) editor.commands.setContent(saved);
+  }, [editor, threadId]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const onUpdate = ({ editor: updated }: { editor: NonNullable<typeof editor> }) => {
+      setDraft(threadId, updated.getText());
+    };
+    editor.on("update", onUpdate);
+    return () => {
+      editor.off("update", onUpdate);
+    };
+  }, [editor, setDraft, threadId]);
+
   const hasText = (editor?.getText().trim().length ?? 0) > 0;
 
   const submit = () => {
@@ -183,6 +207,7 @@ export function Composer({
     });
     editor.commands.clearContent();
     editor.commands.focus("end");
+    clearDraft(threadId);
   };
 
   return (
