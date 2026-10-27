@@ -54,6 +54,7 @@ test("switches local branches and commits repository-wide changes", async () => 
     const ahead = await getPushTarget(repo);
     assert.ok(ahead);
     assert.equal(ahead.ahead, 1);
+    await runGit(remote, "config", "core.hooksPath", join(remote, "hooks"));
     const hook = join(remote, "hooks", "pre-receive");
     await writeFile(hook, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
     await assert.rejects(pushBranch(repo, ahead));

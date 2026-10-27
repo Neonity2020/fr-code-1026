@@ -127,6 +127,45 @@ async function browseHostDirectories(partialPathRaw: string, baseCwd: string = d
   };
 }
 
+const IGNORED_DIRS = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  ".next",
+  ".turbo",
+  ".cache",
+  ".data",
+  ".pnpm-store",
+  "target",
+  "build",
+]);
+
+async function listDirectoryFiles(rootCwd: string, maxFiles = 1000): Promise<string[]> {
+  const result: string[] = [];
+  async function crawl(currentDir: string, relativeDir: string) {
+    if (result.length >= maxFiles) return;
+    let dirents: fs.Dirent[] = [];
+    try {
+      dirents = await fsp.readdir(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const d of dirents) {
+      if (result.length >= maxFiles) break;
+      if (d.name.startsWith(".") && d.name !== ".env") continue;
+      if (d.isDirectory()) {
+        if (!IGNORED_DIRS.has(d.name)) {
+          await crawl(path.join(currentDir, d.name), relativeDir ? `${relativeDir}/${d.name}` : d.name);
+        }
+      } else if (d.isFile()) {
+        result.push(relativeDir ? `${relativeDir}/${d.name}` : d.name);
+      }
+    }
+  }
+  await crawl(rootCwd, "");
+  return result;
+}
+
 function pickFolderFromNativeDialog(options: {
   initialPath?: string;
   prompt?: string;
@@ -353,6 +392,35 @@ const server = http.createServer((request, response) => {
       response.writeHead(400, { "content-type": "text/plain" });
       response.end(error instanceof Error ? error.message : String(error));
     });
+    return;
+  }
+  if (url.pathname === "/api/thread/files" && request.method === "GET") {
+    const thread = store.get(url.searchParams.get("threadId") ?? "");
+    if (!thread) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+    const cwd = thread.summary.cwd;
+    void (async () => {
+      try {
+        let files: string[] = [];
+        try {
+          const stdout = (await execFileAsync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
+            cwd,
+            maxBuffer: 8 * 1024 * 1024,
+          })).stdout;
+          files = stdout.split("\n").filter((f) => f.length > 0 && !f.startsWith(".git/"));
+        } catch {
+          files = await listDirectoryFiles(cwd);
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ files }));
+      } catch (error) {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      }
+    })();
     return;
   }
   if (url.pathname === "/api/thread/git-action" && request.method === "POST") {
@@ -742,6 +810,7 @@ wss.on("connection", (socket) => {
               void runner.sendMessage(command.text, {
                 model: command.model,
                 thinkingLevel: command.thinkingLevel,
+                attachments: command.attachments,
               });
               send(socket, { kind: "ack", commandId });
               return;

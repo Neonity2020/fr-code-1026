@@ -8,6 +8,7 @@
  */
 import {
   firstLineTitle,
+  type AttachmentItem,
   type DomainEvent,
   type PiThinkingLevel,
   type ThreadId,
@@ -515,9 +516,17 @@ export class PiThreadRunner {
 
   async sendMessage(
     text: string,
-    selection?: { model?: string; thinkingLevel?: PiThinkingLevel | null },
+    selection?: {
+      model?: string;
+      thinkingLevel?: PiThinkingLevel | null;
+      attachments?: AttachmentItem[];
+    },
   ): Promise<void> {
     const now = Date.now();
+    const attachments =
+      selection?.attachments && selection.attachments.length > 0
+        ? selection.attachments
+        : undefined;
     this.#upsertItem({
       ...base(`ti-${cryptoRandomId()}`, this.#threadId, this.#ordinal++, now),
       type: "user_message",
@@ -525,6 +534,7 @@ export class PiThreadRunner {
       status: "completed",
       startedAt: now,
       completedAt: now,
+      ...(attachments ? { attachments } : {}),
     });
     const summary = this.#store.get(this.#threadId)?.summary;
     const defaultTitle = summary ? firstLineTitle(summary.cwd) : undefined;
@@ -551,7 +561,36 @@ export class PiThreadRunner {
         selection?.thinkingLevel ?? latestSummary?.thinkingLevel,
       );
       this.#setStatus("running");
-      conn.send({ type: "prompt", message: text, streamingBehavior: "steer" });
+
+      let effectivePrompt = text;
+      if (attachments && attachments.length > 0) {
+        const textAttachments = attachments.filter((a) => a.content && a.content.length > 0);
+        if (textAttachments.length > 0) {
+          effectivePrompt +=
+            "\n\n" +
+            textAttachments
+              .map((a) => `[Context File: ${a.name}]\n\`\`\`\n${a.content}\n\`\`\``)
+              .join("\n\n");
+        }
+      }
+
+      const imageAttachments =
+        attachments?.filter((a) => a.mimeType.startsWith("image/") && a.url) ?? [];
+      const piImages = imageAttachments.map((img) => {
+        const match = img.url!.match(/^data:([^;]+);base64,(.+)$/);
+        return {
+          type: "image",
+          mimeType: match ? match[1] : img.mimeType,
+          data: match ? match[2] : img.url!,
+        };
+      });
+
+      conn.send({
+        type: "prompt",
+        message: effectivePrompt,
+        ...(piImages.length > 0 ? { images: piImages } : {}),
+        streamingBehavior: "steer",
+      });
     } catch (error) {
       this.#setStatus("error");
       const failedAt = Date.now();

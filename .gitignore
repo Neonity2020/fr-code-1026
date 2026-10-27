@@ -3,3 +3,4 @@ dist/
 *.log
 .data/
 .DS_Store
+*.tsbuildinfo

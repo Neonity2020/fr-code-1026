@@ -23,6 +23,19 @@ export type CommandId = string;
 export const PROJECT_SCRIPT_ICONS = ["play", "test", "lint", "configure", "build", "debug"] as const;
 export type ProjectScriptIcon = typeof PROJECT_SCRIPT_ICONS[number];
 
+export interface AttachmentItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  /** base64 data url for images or file content preview */
+  url?: string;
+  /** text content if it is a text/code file */
+  content?: string;
+  /** relative path if it's a workspace file reference */
+  path?: string;
+}
+
 export interface ScopedThreadRef {
   environmentId: string;
   threadId: ThreadId;
@@ -50,7 +63,7 @@ export interface TurnItemBase {
 }
 
 export type TurnItem =
-  | (TurnItemBase & { type: "user_message"; text: string })
+  | (TurnItemBase & { type: "user_message"; text: string; attachments?: AttachmentItem[] })
   | (TurnItemBase & { type: "assistant_message"; text: string })
   | (TurnItemBase & { type: "reasoning"; text: string })
   | (TurnItemBase & {
@@ -210,6 +223,7 @@ export type Command =
       text: string;
       model?: string;
       thinkingLevel?: PiThinkingLevel | null;
+      attachments?: AttachmentItem[];
     }
   | { type: "thread.stop"; threadId: ThreadId }
   | {

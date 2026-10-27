@@ -13,11 +13,14 @@ import {
   ChevronRightIcon,
   CircleCheckIcon,
   CircleXIcon,
+  FileCodeIcon,
   FileDiffIcon,
+  ImageIcon,
   TerminalIcon,
   WrenchIcon,
+  XIcon,
 } from "lucide-react";
-import type { TurnItem } from "@pi-web/protocol";
+import type { AttachmentItem, TurnItem } from "@pi-web/protocol";
 import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
@@ -34,7 +37,7 @@ import {
 export function TurnItemRow({ item }: { item: TurnItem }) {
   switch (item.type) {
     case "user_message":
-      return <UserMessageRow text={item.text} />;
+      return <UserMessageRow text={item.text} attachments={item.attachments} />;
     case "assistant_message":
       return <AssistantMessageRow text={item.text} streaming={item.streaming === true} />;
     case "reasoning":
@@ -347,12 +350,92 @@ function RunningIndicator() {
   );
 }
 
-function UserMessageRow({ text }: { text: string }) {
+function formatAttachmentSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function UserMessageRow({
+  text,
+  attachments,
+}: {
+  text: string;
+  attachments?: AttachmentItem[];
+}) {
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
   return (
-    <div className="mt-3 flex justify-end first:mt-0">
-      <div className="bg-message text-message-foreground max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5 text-sm whitespace-pre-wrap">
-        {text}
-      </div>
+    <div className="mt-3 flex flex-col items-end gap-1.5 first:mt-0">
+      {attachments && attachments.length > 0 && (
+        <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+          {attachments.map((att) => {
+            const isImage = att.mimeType.startsWith("image/") && att.url;
+            if (isImage) {
+              return (
+                <button
+                  key={att.id}
+                  type="button"
+                  onClick={() => setLightboxImage(att.url!)}
+                  className="group relative max-h-48 max-w-xs overflow-hidden rounded-xl border border-border/60 bg-card text-left shadow-xs transition-opacity hover:opacity-95"
+                >
+                  <img
+                    src={att.url}
+                    alt={att.name}
+                    className="max-h-48 max-w-xs object-cover"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2 py-1 text-2xs text-white truncate">
+                    {att.name}
+                  </div>
+                </button>
+              );
+            }
+            return (
+              <div
+                key={att.id}
+                className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/70 px-2.5 py-1 text-xs text-foreground"
+              >
+                <FileCodeIcon className="size-3.5 text-muted-foreground" />
+                <span className="font-mono text-2xs truncate max-w-[180px]">{att.name}</span>
+                {att.size > 0 && (
+                  <span className="text-3xs text-muted-foreground">
+                    ({formatAttachmentSize(att.size)})
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {text.length > 0 && (
+        <div className="bg-message text-message-foreground max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5 text-sm whitespace-pre-wrap">
+          {text}
+        </div>
+      )}
+      {lightboxImage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs"
+        >
+          <div className="relative max-h-full max-w-full" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={lightboxImage}
+              alt="Enlarged attachment"
+              className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            />
+            <button
+              type="button"
+              onClick={() => setLightboxImage(null)}
+              aria-label="Close image preview"
+              className="absolute top-2 right-2 flex size-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+            >
+              <XIcon className="size-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
