@@ -146,6 +146,21 @@ export interface PiModelInfo {
   contextWindow?: number;
 }
 
+// ---------- 线程会话统计（上下文窗口） ----------
+
+export interface ThreadSessionStats {
+  /** 当前上下文已占用 token 数（压缩后可能为 null） */
+  usedTokens: number | null;
+  /** 模型上下文窗口上限 */
+  contextWindow: number | null;
+  /** 占用百分比 */
+  percent: number | null;
+  /** 会话累计处理 token 数 */
+  totalTokens: number | null;
+  /** 会话累计费用 */
+  cost: number | null;
+}
+
 export interface ThreadSummary {
   id: ThreadId;
   title: string;
@@ -155,6 +170,8 @@ export interface ThreadSummary {
   updatedAt: number;
   /** 当前线程绑定的 Pi 模型 slug（provider/modelId） */
   model?: string | null;
+  /** 会话统计（上下文窗口 / 累计 token 与费用），对齐 t3code ContextWindowMeter 数据源 */
+  stats?: ThreadSessionStats | null;
   /** 当前线程的推理思考档位 */
   thinkingLevel?: PiThinkingLevel | null;
   /** Git 分支名（默认 main） */
@@ -231,6 +248,7 @@ export type Command =
       attachments?: AttachmentItem[];
     }
   | { type: "thread.stop"; threadId: ThreadId }
+  | { type: "thread.compact"; threadId: ThreadId }
   | {
       type: "approval.respond";
       threadId: ThreadId;

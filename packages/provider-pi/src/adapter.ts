@@ -14,11 +14,13 @@ import {
   type ThreadId,
   type ThreadStatus,
   type ThreadSummary,
+  type ThreadSessionStats,
   type TurnItem,
   type TurnItemBase,
   type TurnItemStatus,
 } from "@pi-web/protocol";
 import { PiRpcConnection, parsePiModelSlug, type PiRecord } from "./rpc.ts";
+import { foldAssistantUsage, markCompacted, statsFromSessionRpc, type PiUsageLike } from "./stats.ts";
 
 export interface PiThreadStorePort {
   emit(threadId: ThreadId, event: DomainEvent): unknown;
@@ -28,7 +30,11 @@ export interface PiThreadStorePort {
         items: ReadonlyMap<string, TurnItem>;
       }
     | undefined;
-  updateSummary(threadId: ThreadId, patch: Partial<ThreadSummary>): void;
+  updateSummary(
+    threadId: ThreadId,
+    patch: Partial<ThreadSummary>,
+    options?: { preserveUpdatedAt?: boolean },
+  ): void;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -79,11 +85,23 @@ export class PiThreadRunner {
   #status: ThreadStatus = "idle";
   #appliedModel: string | null = null;
   #appliedThinking: PiThinkingLevel | null = null;
+  /** 会话统计（上下文窗口 / 累计 token 与费用），喂给 t3code ContextWindowMeter 复刻 */
+  #stats: ThreadSessionStats | null;
+  readonly #resolveContextWindow:
+    | ((modelSlug: string | null | undefined) => number | null)
+    | undefined;
 
-  constructor(store: PiThreadStorePort, threadId: ThreadId, getCwd: () => string) {
+  constructor(
+    store: PiThreadStorePort,
+    threadId: ThreadId,
+    getCwd: () => string,
+    resolveContextWindow?: (modelSlug: string | null | undefined) => number | null,
+  ) {
     this.#store = store;
     this.#threadId = threadId;
     this.#getCwd = getCwd;
+    this.#resolveContextWindow = resolveContextWindow;
+    this.#stats = store.get(threadId)?.summary.stats ?? null;
   }
 
   get status(): ThreadStatus {
@@ -218,7 +236,8 @@ export class PiThreadRunner {
         const message = event["message"];
         if (stringField(message, "role") !== "assistant") return;
         this.#finalizeAllStreaming();
-        if (stringField(message, "stopReason") === "error") {
+        const stopReason = stringField(message, "stopReason");
+        if (stopReason === "error") {
           const now = Date.now();
           this.#emitItem({
             ...base(`ti-${cryptoRandomId()}`, this.#threadId, this.#ordinal++, now),
@@ -228,7 +247,17 @@ export class PiThreadRunner {
             completedAt: now,
             text: stringField(message, "errorMessage") ?? "pi 报告模型错误。",
           });
+          return;
         }
+        // 与 pi getContextUsage 一致：aborted/error 消息的 usage 不可信
+        if (stopReason === "aborted") return;
+        if (!isRecord(message)) return;
+        const usage = message["usage"];
+        if (!isRecord(usage)) return;
+        const modelSlug = this.#statsModelSlug(message);
+        this.#applyStats(
+          foldAssistantUsage(this.#stats, usage as PiUsageLike, this.#contextWindowFor(modelSlug)),
+        );
         return;
       }
       case "tool_execution_start": {
@@ -293,6 +322,9 @@ export class PiThreadRunner {
         if (!open) return;
         const aborted = event["aborted"] === true;
         const errorMessage = stringField(event, "errorMessage");
+        if (!aborted && !errorMessage) {
+          this.#applyStats(markCompacted(this.#stats));
+        }
         this.#upsertItem({
           ...open,
           status: aborted ? "cancelled" : errorMessage ? "failed" : "completed",
@@ -364,6 +396,7 @@ export class PiThreadRunner {
           this.#resolveApprovalItem(requestId, "cancelled");
         }
         this.#setStatus("idle");
+        if (!aborted) this.#reconcileStats();
         return;
       }
       default:
@@ -474,6 +507,55 @@ export class PiThreadRunner {
     if (this.#pendingApprovals.size === 0 && this.#status === "waiting") {
       this.#setStatus("running");
     }
+  }
+
+  // ---- 会话统计（t3code ContextWindowMeter 数据源） ----
+
+  /** assistant 消息里 model 为子 provider 的裸 id，拼上 provider 得到 pi-web slug */
+  #statsModelSlug(message: Record<string, unknown>): string | null {
+    const provider = stringField(message, "provider");
+    const modelId = stringField(message, "model");
+    if (!modelId) return this.#store.get(this.#threadId)?.summary.model ?? null;
+    return provider ? `${provider}/${modelId}` : modelId;
+  }
+
+  #contextWindowFor(modelSlug: string | null): number | null {
+    const resolved = this.#resolveContextWindow?.(modelSlug);
+    return typeof resolved === "number" && Number.isFinite(resolved) && resolved > 0
+      ? resolved
+      : null;
+  }
+
+  #applyStats(stats: ThreadSessionStats): void {
+    this.#stats = stats;
+    this.#store.updateSummary(
+      this.#threadId,
+      { stats },
+      { preserveUpdatedAt: true },
+    );
+  }
+
+  /** agent_settled 后用 pi get_session_stats 对账（compaction 感知的权威数据） */
+  #reconcileStats(): void {
+    const conn = this.#conn;
+    if (!conn) return;
+    void conn
+      .request({ type: "get_session_stats" }, 10_000)
+      .then((response) => {
+        const data = response["data"];
+        const stats = statsFromSessionRpc(data);
+        if (stats) this.#applyStats(stats);
+      })
+      .catch(() => {
+        /* pi 已退出或超时：保留本地折叠值 */
+      });
+  }
+
+  /** 手动压缩上下文（pi RPC `compact`），完成事件经 compaction_end 回流 */
+  compactContext(): boolean {
+    if (!this.#conn) return false;
+    void this.#conn.request({ type: "compact" }, 120_000).catch(() => {});
+    return true;
   }
 
   async #syncSelection(

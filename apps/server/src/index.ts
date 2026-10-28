@@ -18,7 +18,7 @@ import * as path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ClientMessage, ServerMessage } from "@pi-web/protocol";
+import type { ClientMessage, PiModelInfo, PiStatus, ServerMessage } from "@pi-web/protocol";
 import { PiThreadRunner, checkPiStatus } from "@pi-web/provider-pi";
 import { ThreadStore, type ThreadSubscriber } from "./threads.ts";
 import { countUntrackedLines, getFilePatch, parseGitStatus } from "./git-status.ts";
@@ -245,12 +245,33 @@ const terminals = new Terminals();
 process.on("exit", () => { projectScripts.dispose(); terminals.dispose(); });
 const runners = new Map<string, PiThreadRunner>();
 
+// 已发现的 pi 模型表（slug → contextWindow），供会话统计换算占用百分比
+let piModels: PiModelInfo[] = [];
+void checkPiStatus(process.env.PI_BIN ?? "pi").then((pi: PiStatus) => {
+  piModels = pi.models ?? [];
+});
+const resolveContextWindow = (modelSlug: string | null | undefined): number | null => {
+  if (!modelSlug) return null;
+  const lower = modelSlug.toLowerCase();
+  const model = piModels.find(
+    (entry) => entry.slug.toLowerCase() === lower || entry.id === modelSlug,
+  );
+  return typeof model?.contextWindow === "number" && model.contextWindow > 0
+    ? model.contextWindow
+    : null;
+};
+
 const runnerFor = (threadId: string): PiThreadRunner | undefined => {
   let runner = runners.get(threadId);
   if (!runner) {
     const projection = store.get(threadId);
     if (!projection) return undefined;
-    runner = new PiThreadRunner(store, threadId, () => store.get(threadId)?.summary.cwd ?? defaultCwd);
+    runner = new PiThreadRunner(
+      store,
+      threadId,
+      () => store.get(threadId)?.summary.cwd ?? defaultCwd,
+      resolveContextWindow,
+    );
     runners.set(threadId, runner);
   }
   return runner;
@@ -285,6 +306,7 @@ const server = http.createServer((request, response) => {
   if (url.pathname === "/api/config") {
     const force = url.searchParams.get("refresh") === "1" || url.searchParams.get("force") === "true";
     void checkPiStatus(process.env.PI_BIN ?? "pi", force).then((pi) => {
+      piModels = pi.models ?? [];
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ defaultCwd, homeDir, projects: store.listProjects(), pi }));
     });
@@ -970,6 +992,17 @@ wss.on("connection", (socket) => {
             case "thread.stop": {
               runnerFor(command.threadId)?.stop();
               send(socket, { kind: "ack", commandId });
+              return;
+            }
+            case "thread.compact": {
+              const ok = runnerFor(command.threadId)?.compactContext() ?? false;
+              if (ok) send(socket, { kind: "ack", commandId });
+              else
+                send(socket, {
+                  kind: "nack",
+                  commandId,
+                  message: "pi 进程未启动，无法压缩上下文",
+                });
               return;
             }
             case "approval.respond": {

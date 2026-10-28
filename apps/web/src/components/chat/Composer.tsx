@@ -25,7 +25,8 @@ import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useI18n } from "~/i18n";
 import { downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { ComposerSurface } from "./ComposerSurface";
-import { PiModelPicker, PiThinkingPicker } from "./PiModelPicker";
+import { ContextWindowMeter } from "./ContextWindowMeter";
+import { getDisplayModelName, PiModelPicker, PiThinkingPicker } from "./PiModelPicker";
 import { useComposerDraftStore } from "./composerDraftStore";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
@@ -712,6 +713,19 @@ export function Composer({
               </div>
 
               <div className="flex shrink-0 items-center gap-1.5">
+                {threadSummary?.stats ? (
+                  <ContextWindowMeter
+                    stats={threadSummary.stats}
+                    modelDisplayName={
+                      activeModelInfo ? getDisplayModelName(activeModelInfo) : null
+                    }
+                    onCompact={() =>
+                      transport.dispatch({ type: "thread.compact", threadId })
+                    }
+                    compactDisabled={running}
+                    compactDisabledReason={running ? tr("等当前回合结束后再压缩", "Wait for the current turn to finish") : null}
+                  />
+                ) : null}
                 <input
                   ref={fileInputRef}
                   type="file"
