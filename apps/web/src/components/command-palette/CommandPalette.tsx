@@ -24,7 +24,7 @@ import {
   TerminalIcon,
   ToggleLeftIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { splitSearchText } from "@pi-web/shared/paletteSearch";
 import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useCustomThemes } from "~/hooks/useCustomThemes";
@@ -46,6 +46,7 @@ import {
 } from "~/theme/appearancePreference";
 import { downloadThreadAsJson, downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { emitChatPanelAction } from "../chat/chatPanelBus";
+import { ProjectFilePicker } from "../files/ProjectFilePicker";
 import {
   Command,
   CommandCollection,
@@ -71,6 +72,9 @@ import {
   type CommandPaletteItem,
   type RankedCommandPaletteItem,
 } from "./commandPaletteModel";
+
+/** 面板有两种模式：命令模式（⌘K）与文件选择器模式（⌘P）。 */
+type CommandPaletteMode = "command" | "files";
 
 const APPEARANCE_ICON: Record<AppearanceMode, ReactNode> = {
   system: <MonitorIcon className="size-4" />,
@@ -106,6 +110,7 @@ export function CommandPalette() {
   const { tr } = useI18n();
 
   const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<CommandPaletteMode>("command");
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() =>
     readAppearanceMode(),
   );
@@ -116,21 +121,62 @@ export function CommandPalette() {
 
   useEffect(() => subscribeAppearanceMode(() => setAppearanceMode(readAppearanceMode())), []);
 
-  // ⌘K / Ctrl+K 唤起面板；输入框获得焦点时按 ⌘K 也应唤起而不是插入字符。
+  // ⌘P 唤起文件选择器时置位，等面板真正打开后再消费，避免和下面的 effect 抢状态。
+  const filesModeRequested = useRef(false);
+
+  // 面板从关闭变为打开时决定初始模式：⌘P 进来是文件选择器，其余一律命令模式
+  // （侧边栏按钮等外部唤起都回到命令模式，不残留上次的文件选择器）。
+  useEffect(() => {
+    if (!open) return;
+    if (filesModeRequested.current) {
+      filesModeRequested.current = false;
+      setMode("files");
+      return;
+    }
+    setMode("command");
+  }, [open]);
+
+  // ⌘K / Ctrl+K 唤起命令面板，⌘P / Ctrl+P 唤起文件选择器；
+  // 输入框获得焦点时按 ⌘K 也应唤起而不是插入字符。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
       const mod = isMacPlatform(navigator.platform) ? event.metaKey : event.ctrlKey;
-      if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "k") {
+      if (!mod || event.shiftKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "k") {
         event.preventDefault();
         event.stopPropagation();
-        if (!open) setQuery("");
-        setOpen(!open);
+        if (!open) {
+          setQuery("");
+          setMode("command");
+          setOpen(true);
+          return;
+        }
+        // 已经在命令模式里再按一次就关闭；在文件模式里则先切回命令模式。
+        if (mode === "command") {
+          setOpen(false);
+        } else {
+          setMode("command");
+        }
+        return;
+      }
+      // ⌘P 默认是浏览器打印，必须先 preventDefault 才能接管。
+      if (key === "p") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (open && mode === "files") {
+          setOpen(false);
+          return;
+        }
+        if (!open) filesModeRequested.current = true;
+        setMode("files");
+        setOpen(true);
       }
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [open, setOpen]);
+  }, [mode, open, setOpen]);
 
   const shortcutHint = isMacPlatform(navigator.platform) ? "⌘K" : "Ctrl+K";
 
@@ -363,88 +409,111 @@ export function CommandPalette() {
     [setOpen],
   );
 
+  // 文件选择器自带输入框与结果面板，整棵子树与命令模式互斥渲染。
+  const commandPanel = (
+    <Command
+      mode="none"
+      items={paletteItems}
+      value={query}
+      onValueChange={(value, details) => {
+        // 只同步输入框的改动；选中条目时 base-ui 也会回调 onValueChange。
+        if (details.reason === "input-change" || details.reason === "input-clear") {
+          setQuery(value);
+        }
+      }}
+    >
+      <CommandInput
+        placeholder={tr("搜索命令、线程与项目…", "Search commands, threads, and projects...")}
+      />
+      <CommandList className="max-h-[min(28rem,70vh)]">
+        {filteredGroups.map((group) => (
+          <CommandGroup items={group.items} key={group.value}>
+            {group.label ? <CommandGroupLabel>{group.label}</CommandGroupLabel> : null}
+            <CommandCollection>
+              {(item: RankedCommandPaletteItem) => (
+                <CommandItem key={item.value} value={item.value} onClick={() => runItem(item)}>
+                  <span className="flex size-4 shrink-0 items-center justify-center text-icon-muted">
+                    <PaletteItemIcon item={item} />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-sm text-foreground">
+                      <HighlightedText text={item.title} ranges={item.ranges} />
+                    </span>
+                    {item.description ? (
+                      <span className="truncate text-xs text-muted-foreground/70">
+                        {item.description}
+                      </span>
+                    ) : null}
+                  </span>
+                  {item.shortcut ? <CommandShortcut>{item.shortcut}</CommandShortcut> : null}
+                </CommandItem>
+              )}
+            </CommandCollection>
+          </CommandGroup>
+        ))}
+        <CommandEmpty className="text-muted-foreground py-10 text-center text-sm">
+          {tr("没有匹配的命令、线程或项目。", "No matching commands, threads, or projects.")}
+        </CommandEmpty>
+      </CommandList>
+      <CommandFooter>
+        <div className="flex items-center gap-3">
+          <KbdGroup>
+            <Kbd>
+              <ArrowUpIcon />
+            </Kbd>
+            <Kbd>
+              <ArrowDownIcon />
+            </Kbd>
+            <span>{tr("选择", "Navigate")}</span>
+          </KbdGroup>
+          <KbdGroup>
+            <Kbd>↵</Kbd>
+            <span>{tr("执行", "Run")}</span>
+          </KbdGroup>
+          <KbdGroup>
+            <Kbd>Esc</Kbd>
+            <span>{tr("关闭", "Close")}</span>
+          </KbdGroup>
+        </div>
+        <KbdGroup className="text-muted-foreground">
+          <Kbd>{shortcutHint}</Kbd>
+          <span>{tr("唤起", "Toggle")}</span>
+        </KbdGroup>
+      </CommandFooter>
+    </Command>
+  );
+
   return (
-    <CommandDialog open={open} onOpenChange={(next) => setOpen(next)}>
+    <CommandDialog
+      open={open}
+      onOpenChange={(next, details) => {
+        // 文件模式下 Esc 先退回命令模式，再按一次才关闭面板（对齐 t3code）。
+        if (!next && mode === "files" && details.reason === "escape-key") {
+          details.cancel();
+          setMode("command");
+          return;
+        }
+        if (!next) setMode("command");
+        setOpen(next);
+      }}
+    >
       <CommandDialogPopup
         aria-label={tr("命令面板", "Command palette")}
         className="overflow-hidden"
         data-command-palette="true"
+        data-palette-mode={mode}
         onBackdropPointerDown={() => setOpen(false)}
       >
-        <Command
-          mode="none"
-          items={paletteItems}
-          value={query}
-          onValueChange={(value, details) => {
-            // 只同步输入框的改动；选中条目时 base-ui 也会回调 onValueChange。
-            if (details.reason === "input-change" || details.reason === "input-clear") {
-              setQuery(value);
-            }
-          }}
-        >
-          <CommandInput
-            placeholder={tr("搜索命令、线程与项目…", "Search commands, threads, and projects...")}
+        {mode === "files" ? (
+          <ProjectFilePicker
+            setOpen={(next) => {
+              if (!next) setMode("command");
+              setOpen(next);
+            }}
           />
-          <CommandList className="max-h-[min(28rem,70vh)]">
-            {filteredGroups.map((group) => (
-              <CommandGroup items={group.items} key={group.value}>
-                {group.label ? <CommandGroupLabel>{group.label}</CommandGroupLabel> : null}
-                <CommandCollection>
-                  {(item: RankedCommandPaletteItem) => (
-                    <CommandItem
-                      key={item.value}
-                      value={item.value}
-                      onClick={() => runItem(item)}
-                    >
-                      <span className="flex size-4 shrink-0 items-center justify-center text-icon-muted">
-                        <PaletteItemIcon item={item} />
-                      </span>
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-sm text-foreground">
-                          <HighlightedText text={item.title} ranges={item.ranges} />
-                        </span>
-                        {item.description ? (
-                          <span className="truncate text-xs text-muted-foreground/70">
-                            {item.description}
-                          </span>
-                        ) : null}
-                      </span>
-                      {item.shortcut ? <CommandShortcut>{item.shortcut}</CommandShortcut> : null}
-                    </CommandItem>
-                  )}
-                </CommandCollection>
-              </CommandGroup>
-            ))}
-            <CommandEmpty className="text-muted-foreground py-10 text-center text-sm">
-              {tr("没有匹配的命令、线程或项目。", "No matching commands, threads, or projects.")}
-            </CommandEmpty>
-          </CommandList>
-          <CommandFooter>
-            <div className="flex items-center gap-3">
-              <KbdGroup>
-                <Kbd>
-                  <ArrowUpIcon />
-                </Kbd>
-                <Kbd>
-                  <ArrowDownIcon />
-                </Kbd>
-                <span>{tr("选择", "Navigate")}</span>
-              </KbdGroup>
-              <KbdGroup>
-                <Kbd>↵</Kbd>
-                <span>{tr("执行", "Run")}</span>
-              </KbdGroup>
-              <KbdGroup>
-                <Kbd>Esc</Kbd>
-                <span>{tr("关闭", "Close")}</span>
-              </KbdGroup>
-            </div>
-            <KbdGroup className="text-muted-foreground">
-              <Kbd>{shortcutHint}</Kbd>
-              <span>{tr("唤起", "Toggle")}</span>
-            </KbdGroup>
-          </CommandFooter>
-        </Command>
+        ) : (
+          commandPanel
+        )}
       </CommandDialogPopup>
     </CommandDialog>
   );

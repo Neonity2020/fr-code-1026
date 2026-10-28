@@ -1,5 +1,5 @@
 import type { ProjectIconColor } from "@pi-web/protocol";
-import { PROJECT_ICON_COLORS } from "./projectIconColors";
+import { PROJECT_ICON_COLORS } from "./projectIconColors.ts";
 
 export interface ProjectIdentity {
   readonly monogram: string;

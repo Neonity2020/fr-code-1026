@@ -239,6 +239,7 @@ export function SidebarThreadHeader({
             // 命令面板入口：与 t3code 一样用快捷键提示引导。
             <button
               type="button"
+              aria-label={tr("打开命令面板", "Open command palette")}
               onClick={() => setCommandPaletteOpen(true)}
               title={tr("打开命令面板", "Open command palette")}
               className="text-sidebar-muted-foreground hover:text-sidebar-foreground shrink-0 rounded border border-sidebar-border px-1 font-mono text-[10px] leading-4"

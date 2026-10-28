@@ -14,16 +14,17 @@ export const editors = {
   antigravity: { label: "Antigravity", app: "Antigravity IDE", command: "antigravity" },
 } as const;
 
-export function editorLaunch(target: string, cwd: string, platform: NodeJS.Platform) {
+/** `path` 可以是目录也可以是具体文件;编辑器命令对两者行为一致。 */
+export function editorLaunch(target: string, path: string, platform: NodeJS.Platform) {
   if (target === "folder") {
-    if (platform === "darwin") return { command: "open", args: [cwd] };
-    if (platform === "linux") return { command: "xdg-open", args: [cwd] };
+    if (platform === "darwin") return { command: "open", args: [path] };
+    if (platform === "linux") return { command: "xdg-open", args: [path] };
     return null;
   }
   if (!Object.hasOwn(editors, target)) return null;
   const editor = editors[target as keyof typeof editors];
-  if (platform === "darwin") return { command: "open", args: ["-a", editor.app, cwd] };
-  if (platform === "linux") return { command: editor.command, args: [cwd] };
+  if (platform === "darwin") return { command: "open", args: ["-a", editor.app, path] };
+  if (platform === "linux") return { command: editor.command, args: [path] };
   return null;
 }
 

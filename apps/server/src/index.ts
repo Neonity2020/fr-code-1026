@@ -26,6 +26,7 @@ import { checkoutRemoteBranch, commitChanges, createBranch, getPushTarget, local
 import { ProjectScripts } from "./project-scripts.ts";
 import { availableEditors, editorLaunch } from "./editors.ts";
 import { Terminals } from "./terminals.ts";
+import { listProjectFiles } from "./project-files.ts";
 
 const PORT = Number(process.env.PORT ?? 6115);
 const serverDir = path.dirname(fileURLToPath(import.meta.url)); // apps/server/src
@@ -578,6 +579,70 @@ const server = http.createServer((request, response) => {
     }, (error: unknown) => {
       response.writeHead(500, { "content-type": "text/plain" });
       response.end(error instanceof Error ? error.message : String(error));
+    });
+    return;
+  }
+  if (url.pathname === "/api/fs/files" && request.method === "GET") {
+    const cwd = resolveHostProjectPath(url.searchParams.get("cwd") ?? "");
+    void listProjectFiles(cwd)
+      .then((files) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ files }));
+      })
+      .catch((error: unknown) => {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
+        );
+      });
+    return;
+  }
+  if (url.pathname === "/api/fs/open-file" && request.method === "POST") {
+    const origin = request.headers.origin;
+    if (!origin || origin !== `http://${request.headers.host}` || request.headers["content-type"] !== "application/json") {
+      response.writeHead(403);
+      response.end();
+      return;
+    }
+    let rawBody = "";
+    request.on("data", (chunk) => {
+      rawBody += String(chunk);
+    });
+    request.on("end", () => {
+      let body: { cwd?: string; file?: string; editor?: string } = {};
+      try {
+        body = JSON.parse(rawBody) as { cwd?: string; file?: string; editor?: string };
+      } catch {
+        body = {};
+      }
+      const cwd = body.cwd ? resolveHostProjectPath(body.cwd) : "";
+      const file = body.file?.trim() ?? "";
+      const editor = body.editor?.trim() || "vscode";
+      // file 必须是相对路径,拼出的绝对路径不得逃出 cwd
+      if (!cwd || !file || file.startsWith("/") || file.includes("..")) {
+        response.writeHead(400);
+        response.end();
+        return;
+      }
+      const absolutePath = path.resolve(cwd, file);
+      if (!absolutePath.startsWith(cwd + path.sep)) {
+        response.writeHead(400);
+        response.end();
+        return;
+      }
+      const launch = editorLaunch(editor, absolutePath, process.platform);
+      if (!launch) {
+        response.writeHead(400);
+        response.end("Unknown editor or unsupported platform.");
+        return;
+      }
+      void execFileAsync(launch.command, launch.args).then(() => {
+        response.writeHead(204);
+        response.end();
+      }, (error: unknown) => {
+        response.writeHead(500, { "content-type": "text/plain" });
+        response.end(error instanceof Error ? error.message : String(error));
+      });
     });
     return;
   }
