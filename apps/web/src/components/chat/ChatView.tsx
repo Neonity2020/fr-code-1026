@@ -13,11 +13,11 @@ import {
   CopyIcon,
   FolderIcon,
   PencilIcon,
+  PanelBottomIcon,
+  PanelRightIcon,
   PinIcon,
   PinOffIcon,
-  ScrollTextIcon,
   SearchIcon,
-  TerminalIcon,
   Trash2Icon,
   Undo2Icon,
 } from "lucide-react";
@@ -267,32 +267,6 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
               <SearchIcon />
             </Button>
           ) : null}
-          <Button
-            variant="ghost-muted"
-            size="icon-xs"
-            aria-label={tr("切换脚本输出", "Toggle script output")}
-            aria-expanded={outputOpen}
-            onClick={() => {
-              setTerminalOpen(false);
-              setOutputOpen(!outputOpen);
-            }}
-          >
-            <ScrollTextIcon />
-          </Button>
-          <Button
-            variant="ghost-muted"
-            size="icon-xs"
-            aria-label={tr("切换终端", "Toggle terminal")}
-            title={tr("打开终端", "Open terminal")}
-            aria-expanded={terminalOpen}
-            onClick={() => {
-              setOutputOpen(false);
-              setChangesOpen(false);
-              setTerminalOpen(!terminalOpen);
-            }}
-          >
-            <TerminalIcon />
-          </Button>
           {summary && (
             <ThreadDetailsPanel
               threadId={threadId}
@@ -300,13 +274,30 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
               running={summary.status === "running"}
               inline={inlinePanel}
               inlineOpen={inlinePanelOpen && !changesOpen && !terminalOpen}
-              onInlineOpenChange={setInlinePanelOpen}
+              onInlineOpenChange={(open) => { setInlinePanelOpen(open); if (open) { setChangesOpen(false); setTerminalOpen(false); } }}
               onShowScriptOutput={showScriptOutput}
               onShowTerminal={() => { setOutputOpen(false); setChangesOpen(false); setTerminalOpen(true); }}
               showFiles={changesOpen}
               onShowFilesChange={showChanges}
             />
           )}
+          <Button
+            variant="ghost-muted"
+            size="icon-xs"
+            aria-label={tr("切换终端", "Toggle terminal")}
+            title={tr("打开终端", "Open terminal")}
+            aria-expanded={terminalOpen}
+            aria-pressed={terminalOpen}
+            className={terminalOpen ? "bg-accent" : undefined}
+            onClick={() => {
+              setOutputOpen(false);
+              setChangesOpen(false);
+              setTerminalOpen(!terminalOpen);
+            }}
+          >
+            <PanelBottomIcon />
+          </Button>
+          <Button variant="ghost-muted" size="icon-xs" disabled={!summary} aria-label={tr("切换右侧面板", "Toggle right panel")} title={tr("切换右侧面板", "Toggle right panel")} aria-pressed={changesOpen} className={changesOpen ? "bg-accent" : undefined} onClick={() => showChanges(!changesOpen)}><PanelRightIcon /></Button>
         </div>
       </header>
 
@@ -374,6 +365,7 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
           key={threadId}
           threadId={threadId}
           onClose={() => setTerminalOpen(false)}
+          onShowChanges={() => showChanges(true)}
         />
       )}
     </div>
