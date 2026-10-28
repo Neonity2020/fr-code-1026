@@ -1,4 +1,5 @@
 import {
+  BookmarkIcon,
   DownloadIcon,
   FileDiffIcon,
   GitBranchIcon,
@@ -25,6 +26,8 @@ function resolveSlashIcon(icon: SlashCommandItem["icon"]) {
       return <ScrollTextIcon className="size-3.5 text-purple-500" />;
     case "export":
       return <DownloadIcon className="size-3.5 text-indigo-500" />;
+    case "stash":
+      return <BookmarkIcon className="size-3.5 text-amber-500" />;
     default:
       return <WrenchIcon className="size-3.5 text-muted-foreground" />;
   }

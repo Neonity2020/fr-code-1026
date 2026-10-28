@@ -27,6 +27,15 @@ import { downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { ComposerSurface } from "./ComposerSurface";
 import { PiModelPicker, PiThinkingPicker } from "./PiModelPicker";
 import { useComposerDraftStore } from "./composerDraftStore";
+import { ComposerStashBadge } from "./ComposerStashBadge";
+import { ComposerStashMenu } from "./ComposerStashMenu";
+import {
+  createStashEntryId,
+  partitionStashAttachments,
+  usePromptStashStore,
+  type PromptStashEntry,
+} from "./promptStashStore";
+import { toastManager } from "../ui/toast";
 import { ComposerMentionPopup, useThreadFiles } from "./ComposerMentionPopup";
 import { ComposerSlashPopup } from "./ComposerSlashPopup";
 import { filterSlashCommands, SLASH_COMMANDS, type SlashCommandItem } from "./composerSlash";
@@ -71,6 +80,12 @@ export function Composer({
   const [isDragging, setIsDragging] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 提示词暂存（对齐 t3code prompt stash）：⌘S / Ctrl+S 压入队列，菜单里恢复。
+  const stashEntries = usePromptStashStore((state) => state.entries);
+  const [stashMenuOpen, setStashMenuOpen] = useState(false);
+  const [stashPulse, setStashPulse] = useState({ key: 0, active: false });
+  const stashPulseTimerRef = useRef<number | null>(null);
 
   // Mention popup state
   const [mentionState, setMentionState] = useState<MentionState | null>(null);
@@ -268,6 +283,10 @@ export function Composer({
       }
       case "scripts": {
         emitChatPanelAction("open-script-output");
+        break;
+      }
+      case "stash": {
+        stashCurrentPrompt();
         break;
       }
       case "export": {
@@ -505,6 +524,87 @@ export function Composer({
     setSlashState(null);
   };
 
+  // ---- 提示词暂存（对齐 t3code Prompt Stash） ----
+
+  const pulseStashBadge = () => {
+    if (stashPulseTimerRef.current !== null) {
+      window.clearTimeout(stashPulseTimerRef.current);
+      stashPulseTimerRef.current = null;
+    }
+    setStashPulse((current) => ({ key: current.key + 1, active: true }));
+    stashPulseTimerRef.current = window.setTimeout(() => {
+      stashPulseTimerRef.current = null;
+      setStashPulse((current) => ({ ...current, active: false }));
+    }, 600);
+  };
+
+  /** 把当前 composer 内容压入暂存队列；内容为空时改为开合菜单。 */
+  const stashCurrentPrompt = () => {
+    if (!editor) return;
+    const text = editor.getText();
+    if (text.trim().length === 0 && attachments.length === 0) {
+      setStashMenuOpen((open) => !open);
+      return;
+    }
+    const { kept, droppedNames } = partitionStashAttachments(attachments);
+    const entry: PromptStashEntry = {
+      id: createStashEntryId(),
+      createdAt: Date.now(),
+      prompt: text,
+      attachments: kept,
+      droppedAttachmentNames: droppedNames,
+    };
+    const result = usePromptStashStore.getState().stashEntry(entry);
+    if (!result.written) {
+      toastManager.add({
+        type: "error",
+        title: tr("暂存失败", "Could not stash the prompt"),
+        description: tr("浏览器存储不可用或已超出配额", "Browser storage is unavailable or over quota"),
+      });
+      return;
+    }
+    editor.commands.clearContent();
+    editor.commands.focus("end");
+    setAttachments([]);
+    setMentionState(null);
+    setSlashState(null);
+    clearDraft(threadId);
+    pulseStashBadge();
+    if (droppedNames.length > 0) {
+      toastManager.add({
+        type: "warning",
+        title: tr("部分附件未暂存", "Some attachments were not stashed"),
+        description: droppedNames.join("、"),
+      });
+    }
+  };
+
+  /** 从队列取回条目并放回 composer。 */
+  const restoreStashEntry = (entry: PromptStashEntry) => {
+    if (!editor) return;
+    const { entry: taken } = usePromptStashStore.getState().takeEntry(entry.id);
+    if (!taken) return;
+    editor.commands.setContent(taken.prompt);
+    editor.commands.focus("end");
+    setAttachments(taken.attachments);
+    setStashMenuOpen(false);
+  };
+
+  const deleteStashEntry = (entry: PromptStashEntry) => {
+    usePromptStashStore.getState().removeEntry(entry.id);
+  };
+
+  // ⌘S / Ctrl+S：与 t3code 一致，把提示词压进暂存队列。
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      stashCurrentPrompt();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -528,6 +628,28 @@ export function Composer({
 
   return (
     <>
+      <div className="relative">
+      {stashMenuOpen && (
+        <ComposerStashMenu
+          entries={stashEntries}
+          stashShortcutLabel={`${tr("暂存", "Stash")} · ${tr("⌘S", "⌘S")}`}
+          emptyHint={tr(
+            "还没有暂存内容。在输入框里按 ⌘S 可以暂存当前提示词。",
+            "Nothing stashed yet. Press ⌘S in the composer to stash the current prompt.",
+          )}
+          onRestore={restoreStashEntry}
+          onDelete={deleteStashEntry}
+          onClose={() => setStashMenuOpen(false)}
+        />
+      )}
+      <ComposerStashBadge
+        count={stashEntries.length}
+        menuOpen={stashMenuOpen}
+        pulseKey={stashPulse.key}
+        pulsing={stashPulse.active}
+        label={tr("暂存", "Stash")}
+        onToggleMenu={() => setStashMenuOpen((open) => !open)}
+      />
       <ComposerSurface.Shell contextStrip={attachments.length > 0}>
         <ComposerSurface.Host
           onDragOver={handleDragOver}
@@ -676,6 +798,7 @@ export function Composer({
           </ComposerSurface.ContextStrip>
         )}
       </ComposerSurface.Shell>
+      </div>
 
       {previewImage && (
         <div

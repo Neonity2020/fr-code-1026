@@ -2518,3 +2518,16 @@ code {
     }
   }
 }
+
+/* 提示词暂存计数入场动画：新压入一条时计数从下方淡入一次，随后停止。
+   一次性、事件驱动（React 用 key 重挂载计数元素），不做循环动画。 */
+@keyframes prompt-stash-count-enter {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

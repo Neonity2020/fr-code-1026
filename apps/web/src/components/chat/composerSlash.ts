@@ -5,7 +5,7 @@ export interface SlashCommandItem {
   titleEn: string;
   descriptionZh: string;
   descriptionEn: string;
-  icon: "new" | "fork" | "model" | "terminal" | "scripts" | "changes" | "export";
+  icon: "new" | "fork" | "model" | "terminal" | "scripts" | "changes" | "export" | "stash";
 }
 
 export const SLASH_COMMANDS: SlashCommandItem[] = [
@@ -53,6 +53,15 @@ export const SLASH_COMMANDS: SlashCommandItem[] = [
     descriptionZh: "查看和执行项目构建、测试与运行脚本",
     descriptionEn: "Manage and run build, dev or test scripts",
     icon: "scripts",
+  },
+  {
+    id: "stash",
+    command: "/stash",
+    titleZh: "暂存当前提示词",
+    titleEn: "Stash current prompt",
+    descriptionZh: "把输入框内容存入暂存队列，稍后恢复（等同 ⌘S）",
+    descriptionEn: "Save the composer content into the stash queue and restore it later",
+    icon: "stash",
   },
   {
     id: "export",

@@ -8,7 +8,6 @@ import type { ThreadId, TurnItem } from "@pi-web/protocol";
 import { useAppStore } from "@pi-web/client-runtime";
 import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
-import { ProjectIcon } from "../ProjectMonogram";
 import { useSidebarVisibility } from "../ui/sidebar";
 import { Composer } from "./Composer";
 import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
@@ -23,6 +22,7 @@ import { subscribeChatPanelActions } from "./chatPanelBus";
 import { ArrowDownIcon, DownloadIcon, ScrollTextIcon, TerminalIcon } from "lucide-react";
 import { downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { Button } from "../ui/button";
+import { ChatHeaderTitle } from "./ChatHeaderTitle";
 
 export function ChatView({ threadId }: { threadId: ThreadId }) {
   const isSidebarVisible = useSidebarVisibility();
@@ -71,12 +71,12 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
             "pl-[calc(var(--workspace-controls-left)+var(--workspace-titlebar-control-size)+0.75rem)]",
         )}
       >
-        <ProjectIcon projectName={projectName} className="size-3.5 shrink-0" />
-        <span className="text-muted-foreground text-xs">{projectName}</span>
-        <span className="text-muted-foreground text-xs">/</span>
-        <span className="truncate text-xs font-medium">
-          {summary?.title ?? tr("新线程", "New thread")}
-        </span>
+        <ChatHeaderTitle
+          threadId={threadId}
+          projectName={projectName}
+          title={summary?.title ?? tr("新线程", "New thread")}
+          cwd={summary?.cwd ?? null}
+        />
         <div className="ml-auto flex items-center gap-1">
           {summary && (
             <Button

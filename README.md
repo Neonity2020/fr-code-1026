@@ -75,6 +75,8 @@ bun run test:node
 - **快捷指令 (Slash Commands)**：Composer 输入行首 `/` 呼出快捷指令浮层（`/new`、`/fork`、`/changes`、`/terminal`、`/scripts`、`/export`），支持键盘上下键与回车即时触发。
 - **时间线行内 Pierre FileDiff**：时间线中的 `file_change` 条目展开后使用 `@pierre/diffs` 进行语法高亮与增删行着色渲染，并支持 Unified / Split 布局切换。
 - **消息浮动操作条**：助手回复与用户消息悬停显示快捷操作栏，支持一键复制代码/文本并带对勾反馈提示。
+- **提示词暂存（Prompt Stash）**：⌘S / Ctrl+S（或 `/stash`）把输入区内容压入暂存队列并清空输入区；composer 右上角书签页签显示暂存数，点击展开菜单可恢复 / 删除（上下键移动、Enter 恢复、⌘⌫ 删除、Esc 关闭），对齐 t3code `promptStashStore` + `ComposerStashMenu`。
+- **顶栏标题区**：项目名可点击新建同项目线程；线程标题双击内联重命名（失焦/回车提交，Esc 取消），标题 chevron 打开线程操作菜单（重命名 / 分叉 / 导出 Markdown / 导出 JSON / 复制线程 ID），对齐 t3code `ChatHeader`。
 
 ## 与 t3code 的协议对齐点（升级回完整版时的兼容面）
 
