@@ -15,6 +15,7 @@ import {
   LanguagesIcon,
   MonitorIcon,
   MoonIcon,
+  PaintbrushIcon,
   PlusIcon,
   ScrollTextIcon,
   SettingsIcon,
@@ -26,9 +27,16 @@ import {
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { splitSearchText } from "@pi-web/shared/paletteSearch";
 import { transport, useAppStore } from "@pi-web/client-runtime";
+import { useCustomThemes } from "~/hooks/useCustomThemes";
+import { useTheme } from "~/hooks/useTheme";
 import { useI18n } from "~/i18n";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { projectBasename } from "~/projectIdentity";
+import {
+  BUILT_IN_THEMES,
+  getThemeColorsForMode,
+  getThemeDefinition,
+} from "~/theme/themePalette";
 import {
   applyAppearanceMode,
   cycleAppearanceMode,
@@ -76,6 +84,14 @@ const APPEARANCE_LABEL: Record<AppearanceMode, { zh: string; en: string }> = {
   dark: { zh: "深色", en: "Dark" },
 };
 
+const THEME_DISPLAY_NAMES: Record<string, { zh: string; en: string }> = {
+  "t3-chat": { zh: "FR 默认 (FR Chat)", en: "FR Chat" },
+  grove: { zh: "林深 (Grove)", en: "Grove" },
+  ocean: { zh: "深海 (Ocean)", en: "Ocean" },
+  ember: { zh: "余烬 (Ember)", en: "Ember" },
+  iris: { zh: "鸢尾 (Iris)", en: "Iris" },
+};
+
 export function CommandPalette() {
   const { toggleSidebar } = useSidebar();
   const threads = useAppStore((state) => state.threads);
@@ -93,6 +109,8 @@ export function CommandPalette() {
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() =>
     readAppearanceMode(),
   );
+  const { theme, setTheme } = useTheme();
+  const customThemes = useCustomThemes();
   const open = useAppStore((state) => state.commandPaletteOpen);
   const setOpen = useAppStore((state) => state.setCommandPaletteOpen);
 
@@ -178,6 +196,20 @@ export function CommandPalette() {
         keywords: ["settings", "preferences", "设置", "偏好"],
         run: () => setActiveUtilityPage("settings"),
       },
+      ...[...BUILT_IN_THEMES, ...customThemes].map((t) => {
+        const isCurrent = theme === t.id;
+        const displayName =
+          THEME_DISPLAY_NAMES[t.id]?.[locale === "zh-CN" ? "zh" : "en"] ?? t.label;
+        return {
+          value: `action:theme:${t.id}`,
+          group: COMMAND_PALETTE_ACTION_GROUP,
+          title: tr(`切换主题: ${displayName}`, `Switch theme: ${displayName}`),
+          description: isCurrent ? tr("当前主题 (已启用)", "Active theme") : t.id,
+          shortcut: isCurrent ? "✓" : undefined,
+          keywords: ["theme", "palette", "主题", "配色", "调色板", t.id, t.label],
+          run: () => setTheme(t.id),
+        };
+      }),
     ];
 
     if (activeThreadId) {
@@ -296,13 +328,16 @@ export function CommandPalette() {
     activeThreadId,
     appearanceMode,
     currentCwd,
+    customThemes,
     defaultCwd,
     locale,
     projects,
     setActiveThread,
     setActiveUtilityPage,
     setLocale,
+    setTheme,
     startNewThread,
+    theme,
     threads,
     toggleSidebar,
     tr,
@@ -415,7 +450,30 @@ export function CommandPalette() {
   );
 }
 
+function ThemePaletteDot({ themeId }: { themeId: string }) {
+  const def = getThemeDefinition(themeId);
+  const darkColors = def ? getThemeColorsForMode(def, "dark") : null;
+  const lightColors = def ? getThemeColorsForMode(def, "light") : null;
+  const lightAccent = lightColors?.accent ?? "#e4e4e7";
+  const darkAccent = darkColors?.accent ?? "#27272a";
+
+  return (
+    <span
+      aria-hidden="true"
+      className="size-3.5 rounded-full border border-border/70 shadow-2xs shrink-0 inline-block"
+      style={{
+        background: `linear-gradient(135deg, ${lightAccent} 50%, ${darkAccent} 50%)`,
+      }}
+    />
+  );
+}
+
 function PaletteItemIcon({ item }: { item: CommandPaletteItem }) {
+  if (item.value.startsWith("action:theme:")) {
+    const themeId = item.value.replace("action:theme:", "");
+    return <ThemePaletteDot themeId={themeId} />;
+  }
+
   switch (item.value) {
     case "action:new-thread":
       return <SquarePenIcon className="size-4" />;

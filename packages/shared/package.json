@@ -11,6 +11,10 @@
       "types": "./src/themePalettes.ts",
       "import": "./src/themePalettes.ts"
     },
+    "./themePreview": {
+      "types": "./src/themePreview.ts",
+      "import": "./src/themePreview.ts"
+    },
     "./color": {
       "types": "./src/color.ts",
       "import": "./src/color.ts"

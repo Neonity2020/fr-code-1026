@@ -5,14 +5,17 @@
  * 这样首帧与运行时读到的是同一份偏好，不会闪烁。
  * 对齐 t3code 的 themeBoot / appearance 行为。
  */
-import { applyThemePalette } from "./themePalette";
+import {
+  applyTheme,
+  getSystemDark,
+  readAppearanceModePreference,
+  readThemePreference,
+  setAppearanceMode,
+} from "../hooks/useTheme";
 
 export type AppearanceMode = "system" | "light" | "dark";
 
 export const APPEARANCE_MODE_STORAGE_KEY = "t3code:theme-appearance-mode";
-
-/** 当前 pi-web 使用的调色板（与 main.tsx 保持一致）。 */
-const ACTIVE_THEME_ID = "t3-chat";
 
 const appearanceListeners = new Set<() => void>();
 
@@ -41,7 +44,7 @@ export function resolveAppearance(
 
 /** 系统配色变化时重新解析。 */
 export function systemPrefersDark(): boolean {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return getSystemDark();
 }
 
 /**
@@ -49,24 +52,15 @@ export function systemPrefersDark(): boolean {
  * 返回实际生效的外观，供调用方展示。
  */
 export function applyAppearanceMode(mode: AppearanceMode): "light" | "dark" {
-  try {
-    window.localStorage.setItem(APPEARANCE_MODE_STORAGE_KEY, mode);
-  } catch {
-    // 存储不可用时仍然应用当前会话
-  }
+  setAppearanceMode(mode);
   const appearance = resolveAppearance(mode, systemPrefersDark());
-  document.documentElement.classList.toggle("dark", appearance === "dark");
-  applyThemePalette(ACTIVE_THEME_ID, appearance);
   notifyAppearanceListeners();
   return appearance;
 }
 
 /** 首帧与系统配色变化时调用：只重新解析，不写存储。 */
 export function refreshAppearance(): void {
-  const mode = readAppearanceMode();
-  const appearance = resolveAppearance(mode, systemPrefersDark());
-  document.documentElement.classList.toggle("dark", appearance === "dark");
-  applyThemePalette(ACTIVE_THEME_ID, appearance);
+  applyTheme(readThemePreference(), { suppressTransitions: true });
   notifyAppearanceListeners();
 }
 

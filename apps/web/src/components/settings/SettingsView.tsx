@@ -5,11 +5,8 @@ import {
   InfoIcon,
   LayersIcon,
   LockOpenIcon,
-  MonitorIcon,
-  MoonIcon,
   RotateCcwIcon,
   ServerIcon,
-  SunIcon,
   Trash2Icon,
   Undo2Icon,
   XCircleIcon,
@@ -18,12 +15,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { transport, useAppStore, type AppLocale } from "@pi-web/client-runtime";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { getSettingsSectionLabel, LOCALE_OPTIONS, useI18n } from "~/i18n";
-import {
-  applyAppearanceMode,
-  readAppearanceMode,
-  subscribeAppearanceMode,
-  type AppearanceMode,
-} from "~/theme/appearancePreference";
+import { ThemeSettings } from "./ThemeSettings";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { projectBasename } from "../../projectIdentity";
 import { PiModelPicker, PiThinkingPicker } from "../chat/PiModelPicker";
@@ -260,8 +252,6 @@ export function SettingsView() {
   );
   const [scopeProject, setScopeProject] = useState<string>("all");
   const [scopeEnvironment, setScopeEnvironment] = useState<string>("all");
-  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() => readAppearanceMode());
-  useEffect(() => subscribeAppearanceMode(() => setAppearanceMode(readAppearanceMode())), []);
 
   const updateSetting = <K extends keyof PiSettingsState>(key: K, value: PiSettingsState[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -687,78 +677,45 @@ export function SettingsView() {
 
           {/* APPEARANCE */}
           {activeSettingsSection === "appearance" && (
-            <SettingsSection title={tr("外观与语言", "Appearance")}>
-              <SettingsRow
-                id="setting-appearance-language"
-                title={tr("界面语言 (Language)", "Language")}
-                description={tr(
-                  "切换 FR Code 的显示语言（简体中文 / English）。",
-                  "Switch the display language of FR Code (简体中文 / English).",
-                )}
-                control={<LanguageSwitchControl locale={locale} onChange={setLocale} />}
-              />
-              <SettingsRow
-                id="setting-theme"
-                title={tr("主题模式", "Theme")}
-                description={tr(
-                  "选择 FR Code 在当前设备上的外观主题。",
-                  "Choose how FR Code looks on this device.",
-                )}
-                control={
-                  <div className="inline-flex items-center rounded-lg border border-border/60 bg-background/60 p-0.5">
-                    {(
-                      [
-                        { id: "light", label: tr("浅色", "Light"), icon: SunIcon },
-                        { id: "dark", label: tr("深色", "Dark"), icon: MoonIcon },
-                        { id: "system", label: tr("跟随系统", "System"), icon: MonitorIcon },
-                      ] as const
-                    ).map((item) => {
-                      const Icon = item.icon;
-                      const active = appearanceMode === item.id;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => {
-                            applyAppearanceMode(item.id);
-                            updateSetting("theme", item.id);
-                          }}
-                          className={cn(
-                            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                            active
-                              ? "bg-accent text-accent-foreground shadow-2xs"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon className="size-3.5" />
-                          <span>{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                }
-              />
-              <SettingsRow
-                id="setting-font-scale"
-                title={tr("字体缩放", "Font scale")}
-                description={tr(
-                  "调整界面文字与代码块的显示字号比例。",
-                  "Adjust interface and code block font sizing.",
-                )}
-                control={
-                  <SettingsSelect
-                    ariaLabel={tr("字体缩放", "Font scale")}
-                    value={settings.fontScale}
-                    onChange={(v) => updateSetting("fontScale", v)}
-                    options={[
-                      { value: "default", label: tr("默认 (100%)", "Default (100%)") },
-                      { value: "compact", label: tr("紧凑 (92%)", "Compact (92%)") },
-                      { value: "comfortable", label: tr("宽松 (108%)", "Comfortable (108%)") },
-                    ]}
-                  />
-                }
-              />
-            </SettingsSection>
+            <>
+              <SettingsSection title={tr("界面与语言", "Interface & Language")}>
+                <SettingsRow
+                  id="setting-appearance-language"
+                  title={tr("界面语言 (Language)", "Language")}
+                  description={tr(
+                    "切换 FR Code 的显示语言（简体中文 / English）。",
+                    "Switch the display language of FR Code (简体中文 / English).",
+                  )}
+                  control={<LanguageSwitchControl locale={locale} onChange={setLocale} />}
+                />
+                <SettingsRow
+                  id="setting-font-scale"
+                  title={tr("字体缩放", "Font scale")}
+                  description={tr(
+                    "调整界面文字与代码块的显示字号比例。",
+                    "Adjust interface and code block font sizing.",
+                  )}
+                  control={
+                    <SettingsSelect
+                      ariaLabel={tr("字体缩放", "Font scale")}
+                      value={settings.fontScale}
+                      onChange={(v) => updateSetting("fontScale", v)}
+                      options={[
+                        { value: "default", label: tr("默认 (100%)", "Default (100%)") },
+                        { value: "compact", label: tr("紧凑 (92%)", "Compact (92%)") },
+                        { value: "comfortable", label: tr("宽松 (108%)", "Comfortable (108%)") },
+                      ]}
+                    />
+                  }
+                />
+              </SettingsSection>
+
+              <SettingsSection title={tr("外观与主题调色板", "Appearance & Theme Palettes")}>
+                <div className="p-3 sm:p-5">
+                  <ThemeSettings />
+                </div>
+              </SettingsSection>
+            </>
           )}
 
           {/* KEYBINDINGS */}
