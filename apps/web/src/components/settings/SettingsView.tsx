@@ -24,8 +24,9 @@ import { Kbd } from "../ui/kbd";
 import { useSidebarVisibility } from "../ui/sidebar";
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { ThemeLibrarySection } from "./ThemeLibrarySection";
 
-interface PiSettingsState {
+export interface PiSettingsState {
   defaultModel: string;
   defaultEffort: string;
   defaultPermissions: "full-access" | "supervised";
@@ -48,7 +49,7 @@ interface PiSettingsState {
   gitBranchPrefix: string;
 }
 
-const DEFAULT_PI_SETTINGS: PiSettingsState = {
+export const DEFAULT_PI_SETTINGS: PiSettingsState = {
   defaultModel: "Claude Opus 4.6",
   defaultEffort: "Max",
   defaultPermissions: "full-access",
@@ -71,7 +72,7 @@ const DEFAULT_PI_SETTINGS: PiSettingsState = {
   gitBranchPrefix: "pi/",
 };
 
-const PI_SETTINGS_STORAGE_KEY = "pi-web:settings:v1";
+export const PI_SETTINGS_STORAGE_KEY = "pi-web:settings:v1";
 
 function PolicyTooltip({ text }: { text: string }) {
   return (
@@ -678,7 +679,10 @@ export function SettingsView() {
           {/* APPEARANCE */}
           {activeSettingsSection === "appearance" && (
             <>
-              <SettingsSection title={tr("界面与语言", "Interface & Language")}>
+              <ThemeLibrarySection
+                onAppearanceModeChange={(mode) => updateSetting("theme", mode)}
+              />
+              <SettingsSection title={tr("外观与语言", "Appearance")}>
                 <SettingsRow
                   id="setting-appearance-language"
                   title={tr("界面语言 (Language)", "Language")}
@@ -709,18 +713,28 @@ export function SettingsView() {
                   }
                 />
               </SettingsSection>
-
-              <SettingsSection title={tr("外观与主题调色板", "Appearance & Theme Palettes")}>
-                <div className="p-3 sm:p-5">
-                  <ThemeSettings />
-                </div>
-              </SettingsSection>
             </>
           )}
 
           {/* KEYBINDINGS */}
           {activeSettingsSection === "keybindings" && (
             <SettingsSection title={tr("键盘快捷键", "Keyboard Shortcuts")}>
+              <SettingsRow
+                title={tr("打开命令面板", "Open command palette")}
+                description={tr(
+                  "唤起全局命令面板，快速搜索命令、线程、项目与主题。",
+                  "Open the global command palette to search actions, threads, projects, and themes.",
+                )}
+                control={<Kbd>{isMac ? "⌘K" : "Ctrl+K"}</Kbd>}
+              />
+              <SettingsRow
+                title={tr("在对话中查找", "Find in thread")}
+                description={tr(
+                  "在当前对话时间线中搜索并高亮匹配文本。",
+                  "Search and highlight matching text within the active thread timeline.",
+                )}
+                control={<Kbd>{isMac ? "⌘F" : "Ctrl+F"}</Kbd>}
+              />
               <SettingsRow
                 id="setting-kb-sidebar"
                 title={tr("切换主侧边栏", "Toggle main sidebar")}

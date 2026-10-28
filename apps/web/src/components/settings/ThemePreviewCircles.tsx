@@ -4,16 +4,17 @@ import {
   STANDARD_THEME_PREVIEW_COLORS as SHARED_STANDARD_THEME_PREVIEW_COLORS,
   THEME_PREVIEW_RENDER_SPECS,
 } from "@pi-web/shared/themePreview";
-import { cn } from "../../lib/utils";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useI18n } from "~/i18n";
+import { cn } from "~/lib/utils";
 import {
   getThemeColorsForMode,
   getThemeModes,
   type ThemeAppearance,
   type ThemeDefinition,
-} from "../../theme/themePalette";
+} from "~/theme/themePalette";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-export const THEME_PREVIEW_ROLES = [
+const THEME_PREVIEW_ROLES = [
   "sidebar",
   "canvas",
   "surface",
@@ -22,20 +23,16 @@ export const THEME_PREVIEW_ROLES = [
   "messageSurface",
   "messageAction",
 ] as const;
-
-export type ThemePreviewRole = (typeof THEME_PREVIEW_ROLES)[number];
-
-export type ThemeCardPreview = {
+type ThemePreviewRole = (typeof THEME_PREVIEW_ROLES)[number];
+type ThemeCardPreview = {
   mode: ThemeAppearance;
   colors: Readonly<Record<ThemePreviewRole, string>>;
 };
-
 export type ThemeCardDefinition = {
   id: string;
   label: string;
   previews: ReadonlyArray<ThemeCardPreview>;
 };
-
 export type ThemeMode = ThemeAppearance | "system";
 export type ThemeCardPreviewColors = ThemeCardPreview["colors"];
 
@@ -135,7 +132,7 @@ export function ThemePreviewCircle({
     <span
       aria-hidden
       className={cn(
-        "relative block size-12 shrink-0 overflow-hidden rounded-full border border-border/40 shadow-xs",
+        "relative block size-14 shrink-0 overflow-hidden rounded-full border-2 border-background",
         className,
       )}
       style={{ boxShadow: themePreviewEdgeShadow(mode) }}
@@ -163,8 +160,9 @@ export function ThemePreviewCircles({
   onSelectMode: (mode: ThemeMode) => void;
   previews: ThemeCardDefinition["previews"];
 }) {
+  const { tr } = useI18n();
   return (
-    <div className="flex items-center justify-center gap-3 py-2">
+    <div className="flex min-h-16 items-center justify-center gap-2.5 px-3 pt-3">
       {previews.map((preview) => {
         const mode = preview.mode;
         const isPicked = activeModes.includes(mode);
@@ -173,11 +171,14 @@ export function ThemePreviewCircles({
             <TooltipTrigger
               render={
                 <button
-                  aria-label={`${label} - ${mode === "light" ? "浅色" : "深色"}模式`}
+                  aria-label={tr(
+                    `使用 ${label} 的${mode === "light" ? "浅色" : "深色"}模式`,
+                    `Use ${label} ${mode} mode`,
+                  )}
                   aria-pressed={isPicked}
                   className={cn(
-                    "relative flex size-14 shrink-0 cursor-pointer items-center justify-center rounded-full p-1 transition-all hover:scale-105 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                    isPicked && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+                    "relative flex size-[68px] shrink-0 transform-gpu cursor-pointer items-center justify-center rounded-full p-1 outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                    isPicked && "hover:scale-100",
                   )}
                   onClick={(event) => {
                     event.stopPropagation();
@@ -185,24 +186,33 @@ export function ThemePreviewCircles({
                   }}
                   type="button"
                 >
-                  <ThemePreviewCircle colors={preview.colors} mode={mode} className="size-12" />
+                  <ThemePreviewCircle colors={preview.colors} mode={mode} />
                   {isPicked ? (
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-border bg-background text-primary shadow-xs"
-                    >
-                      {mode === "light" ? (
-                        <SunIcon className="size-2.5" />
-                      ) : (
-                        <MoonIcon className="size-2.5" />
-                      )}
-                    </span>
+                    <>
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 rounded-full"
+                        style={{ boxShadow: "inset 0 0 0 2px var(--ring)" }}
+                      />
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute right-0.5 bottom-0.5 flex size-5 items-center justify-center rounded-full border border-border/70 bg-background text-foreground shadow-sm"
+                      >
+                        {mode === "light" ? (
+                          <SunIcon className="size-3" />
+                        ) : (
+                          <MoonIcon className="size-3" />
+                        )}
+                      </span>
+                    </>
                   ) : null}
                 </button>
               }
             />
             <TooltipPopup>
-              {mode === "light" ? "设为浅色外观" : "设为深色外观"}
+              {mode === "light"
+                ? tr("仅用于浅色模式", "Use for light mode only")
+                : tr("仅用于深色模式", "Use for dark mode only")}
             </TooltipPopup>
           </Tooltip>
         );

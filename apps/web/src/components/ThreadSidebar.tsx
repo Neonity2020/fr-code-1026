@@ -29,9 +29,19 @@ import { useI18n } from "~/i18n";
 import { cn } from "~/lib/utils";
 import { downloadThreadAsJson, downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { projectBasename } from "../projectIdentity";
+import { ProjectIcon } from "./ProjectMonogram";
+import {
+  DEFAULT_PI_SETTINGS,
+  PI_SETTINGS_STORAGE_KEY,
+  type PiSettingsState,
+} from "./settings/SettingsView";
 import { resolveSnoozePresets } from "./Sidebar.snooze";
 import { SettingsSidebarNav } from "./sidebar/SettingsSidebarNav";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import {
+  groupThreadsByProject,
+  partitionWorkingThreads,
+} from "./sidebar/sidebarGrouping";
 import { SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import {
   SidebarThreadRow,
@@ -72,9 +82,23 @@ export function ThreadSidebar() {
   const activeUtilityPage = useAppStore((state) => state.activeUtilityPage);
   const selectedProjectCwd = useAppStore((state) => state.selectedProjectCwd);
   const setSelectedProjectCwd = useAppStore((state) => state.setSelectedProjectCwd);
+  const projects = useAppStore((state) => state.projects);
   const patchThreadSummary = useAppStore((state) => state.patchThreadSummary);
   const setUndoNotice = useAppStore((state) => state.setUndoNotice);
   const { tr } = useI18n();
+
+  const [settings] = useLocalStorage<PiSettingsState>(
+    PI_SETTINGS_STORAGE_KEY,
+    DEFAULT_PI_SETTINGS,
+  );
+  const [collapsedProjects, setCollapsedProjects] = useLocalStorage<Record<string, boolean>>(
+    "t3code:sidebar:collapsed-projects",
+    {},
+  );
+  const [workingExpanded, setWorkingExpanded] = useLocalStorage<boolean>(
+    "t3code:sidebar:working-expanded",
+    true,
+  );
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -166,6 +190,28 @@ export function ThreadSidebar() {
     () => [...pinnedThreads.map((t) => t.id), ...activeThreads.map((t) => t.id)],
     [pinnedThreads, activeThreads],
   );
+
+  const { workingThreads, remainingActiveThreads } = useMemo(
+    () => partitionWorkingThreads(activeThreads, settings.workingSectionBeta),
+    [activeThreads, settings.workingSectionBeta],
+  );
+
+  const projectGroups = useMemo(() => {
+    if (!settings.projectGrouping || selectedProjectCwd !== null) {
+      return null;
+    }
+    return groupThreadsByProject(
+      remainingActiveThreads,
+      settings.projectOrder,
+      projects,
+    );
+  }, [
+    projects,
+    remainingActiveThreads,
+    selectedProjectCwd,
+    settings.projectGrouping,
+    settings.projectOrder,
+  ]);
 
   const hasSearchQuery = searchQuery.trim().length > 0;
   const searchResults = useMemo(() => {
@@ -418,19 +464,114 @@ export function ThreadSidebar() {
                 />
               ))}
 
-              {/* Active threads */}
-              {activeThreads.map((thread) => (
-                <SidebarThreadRow
-                  key={thread.id}
-                  thread={thread}
-                  variant="card"
-                  variantAction="settle"
-                  isActive={thread.id === activeThreadId}
-                  isRenaming={renamingThreadId === thread.id}
-                  onCancelRename={() => setRenamingThreadId(null)}
-                  callbacks={rowCallbacks}
-                />
-              ))}
+              {/* Working section (Beta) */}
+              {workingThreads.length > 0 ? (
+                <>
+                  <li className="mx-0.5 h-7 list-none">
+                    <CollapsibleSectionHeader
+                      expanded={workingExpanded}
+                      onClick={() => setWorkingExpanded((prev) => !prev)}
+                    >
+                      {tr("运行中", "Working")}
+                      {!workingExpanded ? ` (${workingThreads.length})` : null}
+                    </CollapsibleSectionHeader>
+                  </li>
+                  {(workingExpanded
+                    ? workingThreads
+                    : workingThreads.filter((t) => t.id === activeThreadId)
+                  ).map((thread) => (
+                    <SidebarThreadRow
+                      key={thread.id}
+                      thread={thread}
+                      variant="card"
+                      variantAction="settle"
+                      isActive={thread.id === activeThreadId}
+                      isRenaming={renamingThreadId === thread.id}
+                      onCancelRename={() => setRenamingThreadId(null)}
+                      callbacks={rowCallbacks}
+                    />
+                  ))}
+                </>
+              ) : null}
+
+              {/* Active threads (grouped by project or flat) */}
+              {projectGroups !== null
+                ? projectGroups.map((group) => {
+                    const isExpanded = !collapsedProjects[group.cwd];
+                    const visibleThreads = isExpanded
+                      ? group.threads
+                      : group.threads.filter((t) => t.id === activeThreadId);
+                    return (
+                      <div key={group.cwd} className="flex flex-col gap-px">
+                        <li className="group/project-header mx-0.5 flex h-7 list-none items-center justify-between gap-1">
+                          <div className="min-w-0 flex-1">
+                            <CollapsibleSectionHeader
+                              expanded={isExpanded}
+                              onClick={() =>
+                                setCollapsedProjects((prev) => ({
+                                  ...prev,
+                                  [group.cwd]: !prev[group.cwd],
+                                }))
+                              }
+                            >
+                              <span className="inline-flex min-w-0 items-center gap-1.5">
+                                <ProjectIcon
+                                  projectName={group.name}
+                                  className="size-3.5 shrink-0 opacity-75"
+                                />
+                                <span className="truncate">{group.name}</span>
+                                {!isExpanded ? (
+                                  <span className="text-sidebar-muted-foreground/60">
+                                    ({group.threads.length})
+                                  </span>
+                                ) : null}
+                              </span>
+                            </CollapsibleSectionHeader>
+                          </div>
+                          <button
+                            type="button"
+                            title={tr(
+                              `在 ${group.name} 中新建线程`,
+                              `New thread in ${group.name}`,
+                            )}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              useAppStore.getState().markNewThreadRequested();
+                              useAppStore.getState().setActiveUtilityPage(null);
+                              transport.dispatch({ type: "thread.create", cwd: group.cwd });
+                            }}
+                            className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground opacity-0 transition-opacity group-hover/project-header:opacity-100 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                          >
+                            <PlusIcon className="size-3.5" />
+                          </button>
+                        </li>
+                        {visibleThreads.map((thread) => (
+                          <SidebarThreadRow
+                            key={thread.id}
+                            thread={thread}
+                            variant="card"
+                            variantAction="settle"
+                            isActive={thread.id === activeThreadId}
+                            isRenaming={renamingThreadId === thread.id}
+                            onCancelRename={() => setRenamingThreadId(null)}
+                            callbacks={rowCallbacks}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })
+                : remainingActiveThreads.map((thread) => (
+                    <SidebarThreadRow
+                      key={thread.id}
+                      thread={thread}
+                      variant="card"
+                      variantAction="settle"
+                      isActive={thread.id === activeThreadId}
+                      isRenaming={renamingThreadId === thread.id}
+                      onCancelRename={() => setRenamingThreadId(null)}
+                      callbacks={rowCallbacks}
+                    />
+                  ))}
 
               {pinnedThreads.length === 0 &&
               activeThreads.length === 0 &&

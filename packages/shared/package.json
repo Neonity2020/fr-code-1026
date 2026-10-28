@@ -30,6 +30,10 @@
     "./paletteSearch": {
       "types": "./src/paletteSearch.ts",
       "import": "./src/paletteSearch.ts"
+    },
+    "./themePreview": {
+      "types": "./src/themePreview.ts",
+      "import": "./src/themePreview.ts"
     }
   },
   "scripts": {

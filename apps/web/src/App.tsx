@@ -43,6 +43,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./components/ui/tooltip";
+import { AnchoredToastProvider, ToastProvider } from "./components/ui/toast";
 
 const autoCreateStarted = { current: false };
 
@@ -241,47 +242,51 @@ export function App() {
   } as CSSProperties;
 
   return (
-    <TooltipProvider>
-      <SidebarProvider
-        className="h-dvh! min-h-0!"
-        defaultOpen
-        style={sidebarProviderStyle}
-      >
-        <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
-        <Sidebar
-          side="left"
-          collapsible="offcanvas"
-          data-app-sidebar=""
-          role="navigation"
-          aria-label="Threads"
-          resizable={{
-            maxWidth: sidebarMaximumWidth,
-            minWidth: sidebarMinimumWidth,
-            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-              nextWidth <= currentWidth ||
-              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-            onResize: setSidebarWidth,
-          }}
-        >
-          <ThreadSidebar />
-          <SidebarRail onDoubleClick={resetSidebarWidth} />
-        </Sidebar>
+    <ToastProvider>
+      <AnchoredToastProvider>
+        <TooltipProvider>
+          <SidebarProvider
+            className="h-dvh! min-h-0!"
+            defaultOpen
+            style={sidebarProviderStyle}
+          >
+            <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
+            <Sidebar
+              side="left"
+              collapsible="offcanvas"
+              data-app-sidebar=""
+              role="navigation"
+              aria-label="Threads"
+              resizable={{
+                maxWidth: sidebarMaximumWidth,
+                minWidth: sidebarMinimumWidth,
+                shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+                  nextWidth <= currentWidth ||
+                  wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+                storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+                onResize: setSidebarWidth,
+              }}
+            >
+              <ThreadSidebar />
+              <SidebarRail onDoubleClick={resetSidebarWidth} />
+            </Sidebar>
 
-        <SidebarInset className="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
-          {activeUtilityPage !== null ? (
-            <UtilityPageView page={activeUtilityPage} />
-          ) : activeThreadId === null ? (
-            <EmptyWelcome connection={connection} />
-          ) : (
-            <ChatView key={activeThreadId} threadId={activeThreadId} />
-          )}
-        </SidebarInset>
+            <SidebarInset className="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
+              {activeUtilityPage !== null ? (
+                <UtilityPageView page={activeUtilityPage} />
+              ) : activeThreadId === null ? (
+                <EmptyWelcome connection={connection} />
+              ) : (
+                <ChatView key={activeThreadId} threadId={activeThreadId} />
+              )}
+            </SidebarInset>
 
-        <SidebarControl />
-        <CommandPalette />
-      </SidebarProvider>
-    </TooltipProvider>
+            <SidebarControl />
+            <CommandPalette />
+          </SidebarProvider>
+        </TooltipProvider>
+      </AnchoredToastProvider>
+    </ToastProvider>
   );
 }
 

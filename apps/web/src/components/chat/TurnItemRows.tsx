@@ -1,10 +1,13 @@
 /**
  * TurnItem 行渲染器。视觉语言对齐 t3code 的时间线：
- * - 用户消息 = 主题色块；
- * - 助手消息 = markdown 直排；
+ * - 用户消息 = 主题色块 + 长消息折叠 + 悬停复制动作栏；
+ * - 助手消息 = markdown 直排 + 底部操作栏（复制按钮）；
  * - 工作条目（命令 / 文件改动 / 工具调用）= 扁平的工作日志行（图标 + 文本 + 状态），
- *   展开后缩进显示输出；连续的工作条目会折叠成一行摘要（见 timelineGrouping.ts）；
- * - 审批卡 = 带 Accept/Decline 的操作面板。
+ *   展开后缩进显示输出（文件改动优先使用 @pierre/diffs 渲染语法高亮 diff）；
+ *   连续的工作条目折叠成一行摘要（见 timelineGrouping.ts）；
+ * - 审批卡 = 带 Accept/Decline 的操作面板；
+ * - 所有可搜索文本节点标记 `data-thread-find-text` 与 `data-timeline-row-id`，
+ *   折叠容器挂载 `findRevealRef` 支持 ⌘F 查找自动展开。
  */
 import { useMemo, useState } from "react";
 import {
@@ -30,7 +33,8 @@ import { cn } from "~/lib/utils";
 import { getRenderablePatch, resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { ChatMarkdown } from "./ChatMarkdown";
-import { WorkLogButton, WorkLogDetails } from "./WorkLog";
+import { MessageCopyButton } from "./MessageCopyButton";
+import { findRevealRef } from "./threadFindHighlights";
 import {
   formatDurationLabel,
   workGroupDuration,
@@ -38,15 +42,30 @@ import {
   type WorkGroupSummary,
   type WorkTurnItem,
 } from "./timelineGrouping";
+import { shouldCollapseUserMessage } from "./timelineMinimap";
+import { WorkLogButton, WorkLogDetails } from "./WorkLog";
 
-export function TurnItemRow({ item }: { item: TurnItem }) {
+export function TurnItemRow({
+  item,
+  isLatestAssistant = false,
+}: {
+  item: TurnItem;
+  isLatestAssistant?: boolean;
+}) {
   switch (item.type) {
     case "user_message":
-      return <UserMessageRow text={item.text} attachments={item.attachments} />;
+      return <UserMessageRow id={item.id} text={item.text} attachments={item.attachments} />;
     case "assistant_message":
-      return <AssistantMessageRow text={item.text} streaming={item.streaming === true} />;
+      return (
+        <AssistantMessageRow
+          id={item.id}
+          text={item.text}
+          streaming={item.streaming === true}
+          alwaysShowActions={isLatestAssistant}
+        />
+      );
     case "reasoning":
-      return <ReasoningRow text={item.text} streaming={item.streaming === true} />;
+      return <ReasoningRow id={item.id} text={item.text} streaming={item.streaming === true} />;
     case "command_execution":
     case "file_change":
     case "dynamic_tool":
@@ -54,6 +73,7 @@ export function TurnItemRow({ item }: { item: TurnItem }) {
     case "approval_request":
       return (
         <ApprovalRow
+          id={item.id}
           threadId={item.threadId}
           requestId={item.requestId}
           title={item.title}
@@ -63,7 +83,11 @@ export function TurnItemRow({ item }: { item: TurnItem }) {
       );
     case "error":
       return (
-        <div className="bg-error-surface text-error-foreground flex items-start gap-2 rounded-lg px-3 py-2 text-xs">
+        <div
+          data-timeline-row-id={item.id}
+          data-thread-find-text="true"
+          className="bg-error-surface text-error-foreground flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+        >
           <CircleXIcon className="mt-0.5 size-3.5 shrink-0 text-error" />
           <span className="whitespace-pre-wrap">{item.text}</span>
         </div>
@@ -71,6 +95,8 @@ export function TurnItemRow({ item }: { item: TurnItem }) {
     case "system_notice":
       return (
         <div
+          data-timeline-row-id={item.id}
+          data-thread-find-text="true"
           className={cn(
             "text-muted-foreground flex items-center gap-1.5 px-1 py-0.5 text-2xs",
             item.status === "running" && "animate-pulse",
@@ -86,14 +112,17 @@ export function TurnItemRow({ item }: { item: TurnItem }) {
 
 /** 连续工作条目的折叠行（对齐 t3code work-toggle 行）。 */
 export function WorkGroupRow({
+  rowKey,
   items,
   summary,
 }: {
+  rowKey?: string;
   items: readonly WorkTurnItem[];
   summary: WorkGroupSummary;
 }) {
   const [open, setOpen] = useState(false);
   const { tr } = useI18n();
+  const revealRef = findRevealRef(() => setOpen(true));
 
   const label = workGroupLabel(summary, tr);
   const duration = workGroupDuration(summary);
@@ -107,11 +136,16 @@ export function WorkGroupRow({
     );
 
   return (
-    <div className="my-0.5">
+    <div
+      ref={revealRef}
+      data-timeline-row-id={rowKey ?? items[0]?.id ?? "work-group"}
+      data-thread-find-fold={open ? "open" : "closed"}
+      className="my-0.5"
+    >
       <WorkLogButton
         icon={icon}
         label={
-          <span className="flex min-w-0 items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5" data-thread-find-text="true">
             {open ? (
               <ChevronDownIcon className="size-3.5 shrink-0 text-icon-muted" />
             ) : (
@@ -135,7 +169,7 @@ export function WorkGroupRow({
         aria-label={label}
         onClick={() => setOpen((previous) => !previous)}
       />
-      {open ? (
+      <div hidden={!open}>
         <WorkLogDetails kind="panel">
           <div className="ms-1 flex flex-col gap-0.5">
             {items.map((item) => (
@@ -143,22 +177,34 @@ export function WorkGroupRow({
             ))}
           </div>
         </WorkLogDetails>
-      ) : null}
+      </div>
     </div>
   );
 }
 
 /** 连续思考条目的折叠行（对齐 t3code 的 “Thought (×N)”）。 */
-export function ReasoningGroupRow({ items }: { items: readonly ReasoningTurnItem[] }) {
+export function ReasoningGroupRow({
+  rowKey,
+  items,
+}: {
+  rowKey?: string;
+  items: readonly ReasoningTurnItem[];
+}) {
   const [open, setOpen] = useState(false);
   const { tr } = useI18n();
+  const revealRef = findRevealRef(() => setOpen(true));
   const streaming = items.some((item) => item.streaming === true);
   const label = streaming
     ? tr("思考中…", "Thinking…")
     : tr(`思考过程 (×${items.length})`, `Thought (×${items.length})`);
 
   return (
-    <div className="my-0.5">
+    <div
+      ref={revealRef}
+      data-timeline-row-id={rowKey ?? items[0]?.id ?? "reasoning-group"}
+      data-thread-find-fold={open ? "open" : "closed"}
+      className="my-0.5"
+    >
       <WorkLogButton
         icon={<BrainIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />}
         label={
@@ -175,15 +221,20 @@ export function ReasoningGroupRow({ items }: { items: readonly ReasoningTurnItem
         aria-label={label}
         onClick={() => setOpen((previous) => !previous)}
       />
-      {open ? (
+      <div hidden={!open}>
         <WorkLogDetails kind="panel">
           <div className="ms-1 flex flex-col gap-0.5">
             {items.map((item) => (
-              <ReasoningRow key={item.id} text={item.text} streaming={item.streaming === true} />
+              <ReasoningRow
+                key={item.id}
+                id={item.id}
+                text={item.text}
+                streaming={item.streaming === true}
+              />
             ))}
           </div>
         </WorkLogDetails>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -227,18 +278,25 @@ function workGroupLabel(
 function WorkRow({ item, nested = false }: { item: WorkTurnItem; nested?: boolean }) {
   const [open, setOpen] = useState(false);
   const { tr } = useI18n();
+  const revealRef = findRevealRef(() => setOpen(true));
 
   const label = workItemLabel(item, tr);
   const detail = workItemDetail(item);
   const icon = workItemIcon(item);
   const hasBody = detail !== null;
 
+
   return (
-    <div className={cn("my-0.5", nested && "py-0")}>
+    <div
+      ref={revealRef}
+      data-timeline-row-id={item.id}
+      data-thread-find-fold={hasBody ? (open ? "open" : "closed") : undefined}
+      className={cn("my-0.5", nested && "py-0")}
+    >
       <WorkLogButton
         icon={icon}
         label={
-          <span className="flex min-w-0 items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5" data-thread-find-text="true">
             {hasBody ? (
               open ? (
                 <ChevronDownIcon className="size-3.5 shrink-0 text-icon-muted" />
@@ -264,16 +322,16 @@ function WorkRow({ item, nested = false }: { item: WorkTurnItem; nested?: boolea
           setOpen((previous) => !previous);
         }}
       />
-      {open && hasBody ? (
-        <WorkLogDetails>
-          {item.type === "file_change" ? (
-            <FileChangeDiffDetail item={item} />
-          ) : (
-            <pre className="text-2xs text-muted-foreground font-mono whitespace-pre-wrap break-all">
-              {detail}
-            </pre>
-          )}
-        </WorkLogDetails>
+      {hasBody ? (
+        <div hidden={!open} data-thread-find-text="true">
+          <WorkLogDetails>
+            {item.type === "file_change" ? (
+              <FileChangeDiffDetail item={item} />
+            ) : (
+              <pre className="text-2xs text-muted-foreground max-h-80 overflow-auto font-mono whitespace-pre-wrap break-all">{detail}</pre>
+            )}
+          </WorkLogDetails>
+        </div>
       ) : null}
     </div>
   );
@@ -376,10 +434,17 @@ function workItemLabel(
   }
 }
 
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE_REGEX = /\u001b\[[0-9;?]*[A-Za-z]/g;
+
+function stripAnsiEscapes(text: string): string {
+  return text.replace(ANSI_ESCAPE_REGEX, "");
+}
+
 /** 展开后显示的内容：命令输出 / diff / 工具入参。 */
 function workItemDetail(item: WorkTurnItem): string | null {
   if (item.type === "command_execution") {
-    const output = item.output?.trim();
+    const output = stripAnsiEscapes(item.output ?? "").trim();
     if (output) return output;
     const input = item.input.trim();
     return input.length > 0 ? input : null;
@@ -387,11 +452,16 @@ function workItemDetail(item: WorkTurnItem): string | null {
   if (item.type === "file_change") {
     if (item.diffStr !== undefined && item.diffStr.trim().length > 0) return item.diffStr;
     if (item.newStr !== undefined && item.newStr.length > 0) {
-      return item.newStr.split("\n").map((line) => `+ ${line}`).join("\n");
+      return item.newStr
+        .split("\n")
+        .map((line) => `+ ${line}`)
+        .join("\n");
     }
     return null;
   }
-  if (item.output !== undefined && item.output.trim().length > 0) return item.output;
+  if (item.output !== undefined && item.output.trim().length > 0) {
+    return stripAnsiEscapes(item.output);
+  }
   if (item.input !== undefined) return JSON.stringify(item.input, null, 2);
   return null;
 }
@@ -436,29 +506,22 @@ function formatAttachmentSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function UserMessageRow({
-  text,
-  attachments,
-}: {
-  text: string;
-  attachments?: AttachmentItem[];
-}) {
+function UserMessageRow({ id, text, attachments }: { id: string; text: string; attachments?: AttachmentItem[] }) {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const { tr } = useI18n();
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // ignore
-    }
-  };
+  const canCollapse = useMemo(() => shouldCollapseUserMessage(text), [text]);
+  const [expanded, setExpanded] = useState(false);
+  const isCollapsed = canCollapse && !expanded;
+  const revealRef = findRevealRef(() => setExpanded(true));
 
   return (
-    <div className="mt-3 flex flex-col items-end gap-1.5 first:mt-0">
+    <div
+      ref={revealRef}
+      data-timeline-row-id={id}
+      data-user-turn-id={id}
+      data-thread-find-fold={canCollapse ? (expanded ? "open" : "closed") : undefined}
+      className="group/user-message mt-3 flex flex-col items-end gap-1 first:mt-0"
+    >
       {attachments && attachments.length > 0 && (
         <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
           {attachments.map((att) => {
@@ -499,25 +562,32 @@ function UserMessageRow({
           })}
         </div>
       )}
-      {text.length > 0 && (
-        <div className="group relative max-w-[85%]">
-          <div className="bg-message text-message-foreground rounded-2xl rounded-br-md px-3.5 py-2.5 text-sm whitespace-pre-wrap">
-            {text}
-          </div>
+      <div className="bg-message text-message-foreground relative max-w-[85%] overflow-hidden rounded-2xl rounded-br-md px-3.5 py-2.5 text-sm">
+        <div
+          data-thread-find-text="true"
+          className={cn(
+            "whitespace-pre-wrap",
+            isCollapsed && "max-h-40 overflow-hidden mask-b-from-65%",
+          )}
+        >
+          {text}
+        </div>
+        {canCollapse ? (
           <button
             type="button"
-            onClick={handleCopy}
-            className="absolute top-1 -left-7 opacity-0 group-hover:opacity-100 flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-opacity"
-            title={tr("复制消息", "Copy message")}
+            data-thread-find-ignore="true"
+            onClick={() => setExpanded((prev) => !prev)}
+            className="text-muted-foreground hover:text-foreground mt-1.5 inline-flex cursor-pointer items-center gap-1 text-xs font-medium"
           >
-            {copied ? (
-              <CheckIcon className="size-3 text-success" />
-            ) : (
-              <CopyIcon className="size-3" />
-            )}
+            <span>
+              {expanded ? tr("收起消息", "Show less") : tr("展开完整消息", "Show more")}
+            </span>
+            <ChevronDownIcon
+              className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
+            />
           </button>
-        </div>
-      )}
+        ) : null}
+      </div>
       {lightboxImage && (
         <div
           role="dialog"
@@ -542,62 +612,91 @@ function UserMessageRow({
           </div>
         </div>
       )}
+      <div
+        role="toolbar"
+        data-thread-find-ignore="true"
+        aria-label={tr("用户消息操作", "User message actions")}
+        className="flex items-center gap-1 opacity-0 transition-opacity duration-150 group-focus-within/user-message:opacity-100 group-hover/user-message:opacity-100"
+      >
+        <MessageCopyButton
+          text={text}
+          label={tr("复制提示词", "Copy prompt")}
+          size="icon-xs"
+          variant="ghost"
+        />
+      </div>
     </div>
   );
 }
 
-function AssistantMessageRow({ text, streaming }: { text: string; streaming: boolean }) {
-  const [copied, setCopied] = useState(false);
+function AssistantMessageRow({
+  id,
+  text,
+  streaming,
+  alwaysShowActions = false,
+}: {
+  id: string;
+  text: string;
+  streaming: boolean;
+  alwaysShowActions?: boolean;
+}) {
   const { tr } = useI18n();
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // ignore
-    }
-  };
-
   return (
-    <div className="group relative py-1">
-      <ChatMarkdown text={text} />
-      {streaming && (
-        <span className="bg-foreground ml-0.5 inline-block h-3.5 w-[2px] animate-pulse align-middle" />
-      )}
-      {!streaming && text.trim().length > 0 && (
-        <div className="absolute top-1 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 rounded-md border border-border/50 bg-background/90 px-1 py-0.5 shadow-xs backdrop-blur-xs">
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            title={tr("复制 Markdown", "Copy Markdown")}
-          >
-            {copied ? (
-              <>
-                <CheckIcon className="size-3 text-success" />
-                <span>{tr("已复制", "Copied")}</span>
-              </>
-            ) : (
-              <>
-                <CopyIcon className="size-3" />
-                <span>{tr("复制", "Copy")}</span>
-              </>
-            )}
-          </button>
+    <div
+      data-timeline-row-id={id}
+      className="group/assistant-message relative min-w-0 py-1"
+    >
+      <div data-thread-find-text="true">
+        <ChatMarkdown text={text} />
+        {streaming && (
+          <span className="bg-foreground ml-0.5 inline-block h-3.5 w-[2px] animate-pulse align-middle" />
+        )}
+      </div>
+      {!streaming && text.trim().length > 0 ? (
+        <div
+          role="toolbar"
+          data-thread-find-ignore="true"
+          aria-label={tr("助手回复操作", "Assistant response actions")}
+          className={cn(
+            "mt-1 flex items-center gap-1 transition-opacity duration-150",
+            alwaysShowActions
+              ? "opacity-100"
+              : "opacity-0 group-focus-within/assistant-message:opacity-100 group-hover/assistant-message:opacity-100",
+          )}
+        >
+          <MessageCopyButton
+            text={text}
+            label={tr("复制回复", "Copy response")}
+            size="icon-xs"
+            variant="ghost"
+          />
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
-function ReasoningRow({ text, streaming }: { text: string; streaming: boolean }) {
+function ReasoningRow({
+  id,
+  text,
+  streaming,
+}: {
+  id: string;
+  text: string;
+  streaming: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const { tr } = useI18n();
+  const revealRef = findRevealRef(() => setOpen(true));
+
   if (text.trim().length === 0 && !streaming) return null;
   return (
-    <div className="my-0.5">
+    <div
+      ref={revealRef}
+      data-timeline-row-id={id}
+      data-thread-find-fold={open ? "open" : "closed"}
+      className="my-0.5"
+    >
       <WorkLogButton
         icon={<BrainIcon className="size-4 shrink-0 stroke-2 text-icon-muted" />}
         label={
@@ -608,22 +707,24 @@ function ReasoningRow({ text, streaming }: { text: string; streaming: boolean })
         aria-expanded={open}
         onClick={() => setOpen((previous) => !previous)}
       />
-      {open ? (
+      <div hidden={!open} data-thread-find-text="true">
         <WorkLogDetails>
           <p className="text-muted-foreground text-xs whitespace-pre-wrap">{text}</p>
         </WorkLogDetails>
-      ) : null}
+      </div>
     </div>
   );
 }
 
 function ApprovalRow({
+  id,
   threadId,
   requestId,
   title,
   message,
   status,
 }: {
+  id: string;
   threadId: string;
   requestId: string;
   title: string;
@@ -641,7 +742,11 @@ function ApprovalRow({
   };
   if (status !== "waiting") {
     return (
-      <div className="text-muted-foreground flex items-center gap-1.5 px-1 py-0.5 text-2xs">
+      <div
+        data-timeline-row-id={id}
+        data-thread-find-text="true"
+        className="text-muted-foreground flex items-center gap-1.5 px-1 py-0.5 text-2xs"
+      >
         {status === "completed"
           ? tr("已允许", "Approved")
           : tr("已拒绝/取消", "Declined / Cancelled")}
@@ -650,10 +755,14 @@ function ApprovalRow({
     );
   }
   return (
-    <div className="bg-warning-surface my-1 rounded-lg border border-border p-3">
+    <div
+      data-timeline-row-id={id}
+      data-thread-find-text="true"
+      className="bg-warning-surface my-1 rounded-lg border border-border p-3"
+    >
       <div className="text-xs font-medium">{title}</div>
       {message && <div className="text-muted-foreground mt-0.5 text-2xs">{message}</div>}
-      <div className="mt-2 flex gap-2">
+      <div className="mt-2 flex gap-2" data-thread-find-ignore="true">
         <button
           type="button"
           onClick={() => respond("accept")}

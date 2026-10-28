@@ -6,6 +6,19 @@ import { create } from "zustand";
 
 const STORAGE_KEY = "fr-code:composer-drafts:v1";
 
+export function draftContent(text: string) {
+  return {
+    type: "doc",
+    content: [{
+      type: "paragraph",
+      content: text.split("\n").flatMap((line, index) => [
+        ...(index ? [{ type: "hardBreak" }] : []),
+        ...(line ? [{ type: "text", text: line }] : []),
+      ]),
+    }],
+  };
+}
+
 function readDrafts(): Record<string, string> {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);

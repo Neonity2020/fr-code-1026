@@ -5,7 +5,11 @@
  * 但抽屉状态在 ChatView 内部，所以用一个小总线把动作传过去。
  */
 
-export type ChatPanelAction = "open-terminal" | "open-script-output" | "open-changes";
+export type ChatPanelAction =
+  | "open-terminal"
+  | "open-script-output"
+  | "open-changes"
+  | "open-find";
 
 type ChatPanelActionListener = (action: ChatPanelAction) => void;
 

@@ -50,7 +50,7 @@ export function TerminalDrawer({ threadId, onClose }: { threadId: string; onClos
     return () => { observer.disconnect(); input.dispose(); socket.close(); socketRef.current = null; terminal.dispose(); };
   }, [threadId, restart]);
 
-  return <section aria-label={tr("终端", "Terminal")} className="flex h-[min(15rem,40vh)] min-h-0 shrink-0 flex-col border-t bg-(--terminal-background) text-(--terminal-foreground)">
+  return <section aria-label={tr("终端", "Terminal")} className="absolute bottom-0 right-0 top-[var(--workspace-topbar-height)] z-30 flex w-[min(42rem,100%)] min-h-0 flex-col border-l bg-(--terminal-background) text-(--terminal-foreground) shadow-lg">
     <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3 text-xs"><TerminalIcon className="size-4 text-muted-foreground" /><span className="flex-1">{tr("终端", "Terminal")}</span>{exited ? <Button variant="ghost" size="xs" onClick={() => setRestart((value) => value + 1)}>{tr("重新打开", "Restart")}</Button> : <Button variant="ghost-muted" size="icon-xs" disabled={!connected} aria-label={tr("结束终端", "End terminal")} onClick={() => socketRef.current?.send(JSON.stringify({ type: "terminate" }))}><SquareIcon /></Button>}<Button variant="ghost-muted" size="icon-xs" onClick={onClose} aria-label={tr("关闭终端面板", "Close terminal panel")}><XIcon /></Button></div>
     <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden px-2 py-1" />
   </section>;

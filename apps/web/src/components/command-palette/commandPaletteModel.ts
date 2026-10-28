@@ -49,6 +49,7 @@ export interface RankedCommandPaletteGroup {
 export const COMMAND_PALETTE_THREAD_GROUP = "threads";
 export const COMMAND_PALETTE_ACTION_GROUP = "actions";
 export const COMMAND_PALETTE_PROJECT_GROUP = "projects";
+export const COMMAND_PALETTE_THEME_GROUP = "themes";
 
 /** 分组内的显示上限：线程组给足额度，其余分组只展示最好的几条。 */
 function groupLimit(groupValue: string, threadsMatched: boolean): number {

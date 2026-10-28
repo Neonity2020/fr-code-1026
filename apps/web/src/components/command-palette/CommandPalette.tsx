@@ -15,9 +15,10 @@ import {
   LanguagesIcon,
   MonitorIcon,
   MoonIcon,
-  PaintbrushIcon,
+  PaletteIcon,
   PlusIcon,
   ScrollTextIcon,
+  SearchIcon,
   SettingsIcon,
   SquarePenIcon,
   SunIcon,
@@ -39,8 +40,11 @@ import {
 } from "~/theme/themePalette";
 import {
   applyAppearanceMode,
+  applyThemePreference,
+  BUILTIN_THEME_DEFINITIONS,
   cycleAppearanceMode,
   readAppearanceMode,
+  readThemePreference,
   subscribeAppearanceMode,
   type AppearanceMode,
 } from "~/theme/appearancePreference";
@@ -66,6 +70,7 @@ import { useSidebar } from "../ui/sidebar";
 import {
   COMMAND_PALETTE_ACTION_GROUP,
   COMMAND_PALETTE_PROJECT_GROUP,
+  COMMAND_PALETTE_THEME_GROUP,
   COMMAND_PALETTE_THREAD_GROUP,
   filterCommandPaletteGroups,
   type CommandPaletteGroup,
@@ -261,6 +266,14 @@ export function CommandPalette() {
     if (activeThreadId) {
       actionItems.push(
         {
+          value: "action:find-in-thread",
+          group: COMMAND_PALETTE_ACTION_GROUP,
+          title: tr("在对话中查找", "Find in thread"),
+          keywords: ["find", "search", "thread", "查找", "搜索"],
+          shortcut: isMacPlatform(navigator.platform) ? "⌘F" : "Ctrl+F",
+          run: () => emitChatPanelAction("open-find"),
+        },
+        {
           value: "action:open-terminal",
           group: COMMAND_PALETTE_ACTION_GROUP,
           title: tr("打开终端", "Open terminal"),
@@ -335,6 +348,20 @@ export function CommandPalette() {
       );
     }
 
+    const activeThemeId = readThemePreference();
+    const themeItems: CommandPaletteItem[] = [
+      { id: "default", label: "FR Code" },
+      ...BUILTIN_THEME_DEFINITIONS.map((t) => ({ id: t.id, label: t.label })),
+    ].map((palette) => ({
+      value: `theme:${palette.id}`,
+      group: COMMAND_PALETTE_THEME_GROUP,
+      title: tr(`切换主题：${palette.label}`, `Switch theme: ${palette.label}`),
+      description:
+        activeThemeId === palette.id ? tr("当前使用中", "Currently active") : undefined,
+      keywords: ["theme", "palette", "color", palette.label, palette.id, "主题", "配色"],
+      run: () => applyThemePreference(palette.id),
+    }));
+
     const threadItems: CommandPaletteItem[] = threads
       .slice()
       .sort((left, right) => right.updatedAt - left.updatedAt)
@@ -369,6 +396,7 @@ export function CommandPalette() {
       { value: COMMAND_PALETTE_ACTION_GROUP, label: tr("命令", "Actions"), items: actionItems },
       { value: COMMAND_PALETTE_THREAD_GROUP, label: tr("线程", "Threads"), items: threadItems },
       { value: COMMAND_PALETTE_PROJECT_GROUP, label: tr("项目", "Projects"), items: projectItems },
+      { value: COMMAND_PALETTE_THEME_GROUP, label: tr("主题", "Themes"), items: themeItems },
     ];
   }, [
     activeThreadId,
@@ -554,6 +582,8 @@ function PaletteItemIcon({ item }: { item: CommandPaletteItem }) {
       return <ToggleLeftIcon className="size-4" />;
     case "action:open-settings":
       return <SettingsIcon className="size-4" />;
+    case "action:find-in-thread":
+      return <SearchIcon className="size-4" />;
     case "action:open-terminal":
       return <TerminalIcon className="size-4" />;
     case "action:open-script-output":
@@ -568,6 +598,7 @@ function PaletteItemIcon({ item }: { item: CommandPaletteItem }) {
     default:
       break;
   }
+  if (item.group === COMMAND_PALETTE_THEME_GROUP) return <PaletteIcon className="size-4" />;
   if (item.group === COMMAND_PALETTE_PROJECT_GROUP) return <FolderIcon className="size-4" />;
   if (item.group === COMMAND_PALETTE_THREAD_GROUP) return <PlusIcon className="size-4" />;
   return <SquarePenIcon className="size-4" />;

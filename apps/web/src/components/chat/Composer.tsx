@@ -27,7 +27,7 @@ import { downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { ComposerSurface } from "./ComposerSurface";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { getDisplayModelName, PiModelPicker, PiThinkingPicker } from "./PiModelPicker";
-import { useComposerDraftStore } from "./composerDraftStore";
+import { draftContent, useComposerDraftStore } from "./composerDraftStore";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import {
@@ -59,6 +59,7 @@ function formatAttachmentSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
 
 export function Composer({
   threadId,
@@ -454,7 +455,7 @@ export function Composer({
     if (!editor || restoredDraftRef.current) return;
     restoredDraftRef.current = true;
     const saved = useComposerDraftStore.getState().getDraft(threadId);
-    if (saved.length > 0) editor.commands.setContent(saved);
+    if (saved.length > 0) editor.commands.setContent(draftContent(saved));
   }, [editor, threadId]);
 
   useEffect(() => {

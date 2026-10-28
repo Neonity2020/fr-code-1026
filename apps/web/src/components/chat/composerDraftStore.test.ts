@@ -12,7 +12,12 @@ const memory = new Map<string, string>();
   },
 };
 
-const { useComposerDraftStore } = await import("./composerDraftStore.ts");
+const { draftContent, useComposerDraftStore } = await import("./composerDraftStore.ts");
+
+test("恢复草稿保留尖括号和换行", () => {
+  const nodes = draftContent("<div>\n\nhello & goodbye").content[0]!.content;
+  assert.equal(nodes.map((node) => node.type === "hardBreak" ? "\n" : node.text).join(""), "<div>\n\nhello & goodbye");
+});
 
 test("草稿按线程隔离保存", () => {
   const store = useComposerDraftStore.getState();

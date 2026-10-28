@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckIcon, ChevronDownIcon, CloudUploadIcon, Code2Icon, FileDiffIcon, FolderIcon, GitBranchIcon, MonitorIcon, PanelRightIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, CloudUploadIcon, Code2Icon, FileDiffIcon, FolderIcon, GitBranchIcon, MonitorIcon, PanelRightIcon, PlusIcon, TerminalIcon } from "lucide-react";
 import { useI18n } from "~/i18n";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { Button } from "../ui/button";
@@ -23,10 +23,9 @@ interface GitStatus {
   pushTarget: { branch: string; remote: string; ref: string; hasUpstream: boolean; ahead: number | null; behind: number | null } | null;
 }
 
-export function ThreadDetailsPanel({ threadId, cwd, running, inline, inlineOpen, onInlineOpenChange, onShowScriptOutput }: { threadId: string; cwd: string; running: boolean; inline: boolean; inlineOpen: boolean; onInlineOpenChange: (open: boolean) => void; onShowScriptOutput: () => void }) {
+export function ThreadDetailsPanel({ threadId, cwd, running, inline, inlineOpen, onInlineOpenChange, onShowScriptOutput, onShowTerminal, showFiles, onShowFilesChange }: { threadId: string; cwd: string; running: boolean; inline: boolean; inlineOpen: boolean; onInlineOpenChange: (open: boolean) => void; onShowScriptOutput: () => void; onShowTerminal: () => void; showFiles: boolean; onShowFilesChange: (open: boolean) => void }) {
   const { tr } = useI18n();
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -50,8 +49,8 @@ export function ThreadDetailsPanel({ threadId, cwd, running, inline, inlineOpen,
   useEffect(() => { if (inline) setPopoverOpen(false); }, [inline]);
   // 命令面板可以直接打开变更对话框。
   useEffect(
-    () => subscribeChatPanelActions((action) => { if (action === "open-changes") setShowFiles(true); }),
-    [],
+    () => subscribeChatPanelActions((action) => { if (action === "open-changes") onShowFilesChange(true); }),
+    [onShowFilesChange],
   );
   useEffect(() => {
     const controller = new AbortController();
@@ -217,6 +216,7 @@ export function ThreadDetailsPanel({ threadId, cwd, running, inline, inlineOpen,
             <Menu><MenuTrigger render={<button type="button" aria-label={tr("选择编辑器", "Choose editor")} className="rounded-md p-2 hover:bg-accent" />}><ChevronDownIcon className="size-4 text-muted-foreground" /></MenuTrigger><MenuPopup align="end" className="w-56">{editors.length ? editors.map((editor) => <MenuItem key={editor.id} onClick={() => setPreferredEditor(editor.id)}><Code2Icon className="size-4 text-muted-foreground" /><span className="flex-1">{editor.label}</span>{activeEditor?.id === editor.id && <CheckIcon className="size-4" />}</MenuItem>) : <MenuItem disabled>{editorLoading ? tr("正在检测编辑器…", "Detecting editors…") : tr("未检测到编辑器", "No editors found")}</MenuItem>}</MenuPopup></Menu>
           </div>
           <ProjectScriptsControl threadId={threadId} onShowOutput={onShowScriptOutput} />
+          <button type="button" className="flex min-h-8 w-full items-center gap-3 rounded-md px-2 text-left hover:bg-accent" onClick={() => { setPopoverOpen(false); onShowTerminal(); }}><TerminalIcon className="size-4 text-muted-foreground" />{tr("打开终端", "Open terminal")}</button>
           {actionError && <div role="alert" className="break-words px-2 py-2 text-destructive">{actionError}</div>}
           <div className="border-t pt-2">
             {error ? <div className="px-2 py-2 text-destructive">{tr("无法加载项目状态", "Could not load project status")}</div> : status?.branch ? (
@@ -239,7 +239,7 @@ export function ThreadDetailsPanel({ threadId, cwd, running, inline, inlineOpen,
                   <Menu><MenuTrigger render={<button type="button" disabled={busy} aria-label={tr("Git 操作", "Git actions")} className="rounded-md p-2 hover:bg-accent disabled:opacity-50" />}><ChevronDownIcon className="size-4 text-muted-foreground" /></MenuTrigger><MenuPopup align="end"><MenuItem disabled={busy || status.files.length === 0} onClick={() => { setActionError(""); setCommitDialog(true); }}>{tr("提交", "Commit")}</MenuItem><MenuItem disabled={busy || !status.pushTarget || status.pushTarget.ahead === 0} onClick={() => { setActionError(""); setPushDialog(true); }}>{tr("推送", "Push")}</MenuItem><MenuItem disabled={busy || !status.pushTarget?.hasUpstream} onClick={() => { setActionError(""); setPullDialog(true); }}>{tr("拉取", "Pull")}</MenuItem><MenuItem disabled={busy || !status.pushTarget} onClick={() => void sync("fetch")}>{tr("刷新远程状态", "Fetch remote")}</MenuItem></MenuPopup></Menu>
                 </div>
                 {status.pushTarget?.hasUpstream && (status.pushTarget.ahead || status.pushTarget.behind) ? <div className="px-2 pb-1 pl-9 text-[11px] text-muted-foreground">{status.pushTarget.ahead ? `↑${status.pushTarget.ahead}` : ""} {status.pushTarget.behind ? `↓${status.pushTarget.behind}` : ""}</div> : null}
-                <button type="button" className="flex min-h-8 w-full items-center gap-3 rounded-md px-2 text-left hover:bg-accent" onClick={() => setShowFiles(true)}>
+                <button type="button" className="flex min-h-8 w-full items-center gap-3 rounded-md px-2 text-left hover:bg-accent" onClick={() => { setPopoverOpen(false); onShowFilesChange(true); }}>
                   <FileDiffIcon className="size-4 text-muted-foreground" /><span className="flex-1">{tr("变更", "Changes")} ({status.files.length})</span><span title={status.statsIncomplete ? tr("部分文件未计入统计", "Some files are excluded from the count") : undefined} className="text-emerald-600">{status.statsIncomplete ? "≥" : ""}+{status.additions}</span><span className="text-red-600">−{status.deletions}</span>
                 </button>
               </>
@@ -250,7 +250,7 @@ export function ThreadDetailsPanel({ threadId, cwd, running, inline, inlineOpen,
   return (
     <>
       {inline ? <><Button variant="ghost-muted" size="icon-xs" aria-label={tr("切换项目面板", "Toggle project panel")} aria-expanded={inlineOpen} onClick={() => onInlineOpenChange(!inlineOpen)}><PanelRightIcon /></Button>{inlineOpen && <aside aria-label={tr("项目详情", "Project details")} className="absolute right-3 top-[calc(var(--workspace-topbar-height)+0.75rem)] z-20 w-[280px]">{card}</aside>}</> : <Popover open={popoverOpen} onOpenChange={setPopoverOpen}><PopoverTrigger render={<Button variant="ghost-muted" size="icon-xs" aria-label={tr("切换项目面板", "Toggle project panel")} />}><PanelRightIcon /></PopoverTrigger><PopoverPopup align="end" width="auto" padding="none" className="w-[min(280px,calc(100vw-2rem))] border-0 bg-transparent shadow-none"><div aria-label={tr("项目详情", "Project details")}>{card}</div></PopoverPopup></Popover>}
-      <ChangesDialog threadId={threadId} files={status?.files ?? []} open={showFiles} onOpenChange={setShowFiles} />
+      <ChangesDialog threadId={threadId} files={status?.files ?? []} open={showFiles} onOpenChange={onShowFilesChange} />
       <Dialog open={branchDialog} onOpenChange={(next) => { if (!busy) setBranchDialog(next); }}>
         <DialogPopup><DialogHeader><DialogTitle>{tr("新建分支", "Create branch")}</DialogTitle><DialogDescription>{tr("从当前提交创建并切换到新分支。", "Create and switch to a branch from the current commit.")}</DialogDescription></DialogHeader><DialogPanel><label className="block text-sm font-medium" htmlFor="branch-name">{tr("分支名称", "Branch name")}</label><input id="branch-name" autoFocus value={newBranch} onChange={(event) => setNewBranch(event.target.value)} className="mt-2 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />{actionError && <p role="alert" className="mt-2 break-words text-sm text-destructive">{actionError}</p>}</DialogPanel><DialogFooter><Button variant="ghost" disabled={busy} onClick={() => setBranchDialog(false)}>{tr("取消", "Cancel")}</Button><Button disabled={busy || !newBranch.trim()} onClick={() => void createNewBranch()}>{tr("创建分支", "Create branch")}</Button></DialogFooter></DialogPopup>
       </Dialog>
