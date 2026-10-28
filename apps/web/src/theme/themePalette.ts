@@ -1556,6 +1556,10 @@ export function parseThemeHalves(raw: string | null): ThemeHalves | null {
     for (const appearance of ["light", "dark"] as const) {
       const themeId = value[appearance];
       if (typeof themeId !== "string") continue;
+      if (themeId === "default") {
+        halves[appearance] = themeId;
+        continue;
+      }
       const definition = getThemeDefinition(themeId);
       if (definition && getThemeColorsForMode(definition, appearance) !== null) {
         halves[appearance] = definition.id;

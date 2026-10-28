@@ -21,15 +21,14 @@ import {
   type ThemeAppearance,
   type ThemeDefinition,
   type ThemeHalves,
-} from "./themePalette";
+} from "./themePalette.ts";
 
 export type AppearanceMode = "system" | "light" | "dark";
 
 export const APPEARANCE_MODE_STORAGE_KEY = THEME_APPEARANCE_MODE_STORAGE_KEY;
 export const THEME_PREFERENCE_STORAGE_KEY = "t3code:theme-preference:v1";
 
-/** 默认使用 t3-chat 主题（保持与之前版本一致）。 */
-export const DEFAULT_THEME_ID = "t3-chat";
+export const DEFAULT_THEME_ID = "default";
 
 export const BUILTIN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = [
   T3_CHAT_THEME,
@@ -155,8 +154,8 @@ export function applyThemeHalf(
   const otherThemeId = currentHalves[otherAppearance] ?? currentTheme;
 
   const nextHalves: { light?: string; dark?: string } = {
-    [appearance]: themeId === "default" ? undefined : themeId,
-    [otherAppearance]: otherThemeId === "default" ? undefined : otherThemeId,
+    [appearance]: themeId,
+    [otherAppearance]: otherThemeId,
   };
 
   try {
