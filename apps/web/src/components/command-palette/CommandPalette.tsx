@@ -185,10 +185,7 @@ export function CommandPalette() {
 
   const shortcutHint = isMacPlatform(navigator.platform) ? "⌘K" : "Ctrl+K";
 
-  const currentCwd = useMemo(() => {
-    const active = threads.find((thread) => thread.id === activeThreadId);
-    return selectedProjectCwd ?? active?.cwd ?? defaultCwd ?? "";
-  }, [activeThreadId, defaultCwd, selectedProjectCwd, threads]);
+  const currentCwd = selectedProjectCwd ?? "";
 
   const startNewThread = useCallback(
     (cwd: string) => {
@@ -196,12 +193,12 @@ export function CommandPalette() {
       state.markNewThreadRequested();
       transport.dispatch({
         type: "thread.create",
-        cwd: cwd || (defaultCwd ?? ""),
+        cwd,
         ...(state.selectedModel ? { model: state.selectedModel } : {}),
         ...(state.selectedThinkingLevel ? { thinkingLevel: state.selectedThinkingLevel } : {}),
       });
     },
-    [defaultCwd],
+    [],
   );
 
   const groups = useMemo<ReadonlyArray<CommandPaletteGroup>>(() => {

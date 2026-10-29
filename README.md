@@ -46,9 +46,7 @@ bun run test:node
 
 前提：本机已安装并登录 pi CLI（`pi --version`；未安装时应用仍可启动，发送消息会得到明确错误提示）。数据（事件日志 JSONL）存于 `.data/`（gitignored）。可用环境变量：`PORT`（默认 6115）、`PI_WEB_DATA_DIR`、`PI_WEB_DEFAULT_CWD`、`PI_BIN`。
 
-> **注意从仓库根启动服务端**：新线程的默认工作目录取自服务端 `process.cwd()`。
-> 如果你在 `apps/server/` 下启动，默认 cwd 会变成 `apps/server`。不想从根启动就设
-> `PI_WEB_DEFAULT_CWD=/path/to/your/project`。
+默认工作区根目录为 `~/fr-code/`，启动时自动创建。未选择项目时新建线程会创建 `YYYY-MM-DD-随机字符` 子目录；从已有项目新建线程会继续使用该项目目录。可通过 `PI_WEB_DEFAULT_CWD` 覆盖默认根目录。
 
 ## Monorepo 包结构
 

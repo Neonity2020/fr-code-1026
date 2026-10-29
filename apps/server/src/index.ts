@@ -27,14 +27,16 @@ import { ProjectScripts } from "./project-scripts.ts";
 import { availableEditors, editorLaunch, validateWorkspaceDirectory } from "./editors.ts";
 import { Terminals } from "./terminals.ts";
 import { listProjectFiles } from "./project-files.ts";
+import { createWorkspace, workspaceRoot } from "./workspaces.ts";
 
 const PORT = Number(process.env.PORT ?? 6115);
 const serverDir = path.dirname(fileURLToPath(import.meta.url)); // apps/server/src
 const repoDir = path.resolve(serverDir, "../../..");
 const dataDir = process.env.PI_WEB_DATA_DIR ?? path.join(repoDir, ".data");
 const webDist = path.resolve(repoDir, "apps/web/dist");
-const defaultCwd = process.env.PI_WEB_DEFAULT_CWD ?? process.cwd();
 const homeDir = os.homedir();
+const defaultCwd = workspaceRoot(homeDir, process.env.PI_WEB_DEFAULT_CWD);
+fs.mkdirSync(defaultCwd, { recursive: true });
 const execFileAsync = promisify(execFile);
 
 function expandHomePath(inputPath: string): string {
@@ -839,21 +841,23 @@ wss.on("connection", (socket) => {
         try {
           switch (command.type) {
             case "thread.create": {
-              const normalizedCwd = resolveHostProjectPath(command.cwd);
-              try {
-                fs.mkdirSync(normalizedCwd, { recursive: true });
-              } catch {
-                // ignore if read-only
-              }
-              store.createThread(normalizedCwd, command.title, {
+              const normalizedCwd = command.cwd.trim()
+                ? resolveHostProjectPath(command.cwd)
+                : createWorkspace(defaultCwd);
+              fs.mkdirSync(normalizedCwd, { recursive: true });
+              const created = store.createThread(normalizedCwd, command.title, {
                 model: command.model,
                 thinkingLevel: command.thinkingLevel,
               });
+              const createdEvent = store.get(created.id)?.events[0];
+              if (createdEvent) subscriber.sendEvent(createdEvent);
               send(socket, { kind: "ack", commandId });
               return;
             }
             case "thread.fork": {
-              store.forkThread(command.sourceThreadId, command.title);
+              const forked = store.forkThread(command.sourceThreadId, command.title);
+              const createdEvent = store.get(forked.id)?.events[0];
+              if (createdEvent) subscriber.sendEvent(createdEvent);
               send(socket, { kind: "ack", commandId });
               return;
             }

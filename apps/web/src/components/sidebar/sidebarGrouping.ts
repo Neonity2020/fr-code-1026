@@ -92,3 +92,14 @@ export function groupThreadsByProject(
 
   return groups;
 }
+
+/** Move a project to the target project's position without losing other projects. */
+export function moveProject(order: readonly string[], source: string, target: string): string[] {
+  const from = order.indexOf(source);
+  const to = order.indexOf(target);
+  if (from < 0 || to < 0 || from === to) return [...order];
+  const next = [...order];
+  next.splice(from, 1);
+  next.splice(to, 0, source);
+  return next;
+}

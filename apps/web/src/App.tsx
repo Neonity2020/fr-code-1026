@@ -219,7 +219,7 @@ export function App() {
     if (threadsLoaded && defaultCwd !== null && !hasThreads && !autoCreateStarted.current) {
       autoCreateStarted.current = true;
       useAppStore.getState().markNewThreadRequested();
-      transport.dispatch({ type: "thread.create", cwd: defaultCwd });
+      transport.dispatch({ type: "thread.create", cwd: "" });
     }
   }, [threadsLoaded, defaultCwd, hasThreads]);
 

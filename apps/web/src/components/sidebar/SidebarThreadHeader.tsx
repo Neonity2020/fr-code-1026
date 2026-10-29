@@ -164,7 +164,7 @@ export function SidebarThreadHeader({
     state.markNewThreadRequested();
     transport.dispatch({
       type: "thread.create",
-      cwd: currentContextCwd,
+      cwd: selectedProjectCwd ?? "",
       ...(state.selectedModel ? { model: state.selectedModel } : {}),
       ...(state.selectedThinkingLevel ? { thinkingLevel: state.selectedThinkingLevel } : {}),
     });

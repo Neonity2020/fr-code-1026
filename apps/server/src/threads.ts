@@ -4,6 +4,7 @@
  * 订阅者可携带 afterSequence 增量续传。
  * v1 持久化为每线程一个 JSONL 文件，重启时重放折叠。
  */
+import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -371,7 +372,5 @@ export class ThreadStore implements PiThreadStorePort {
 }
 
 function cryptoRandomId(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(8)))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return randomBytes(8).toString("hex");
 }

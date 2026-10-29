@@ -1,11 +1,14 @@
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
   CheckIcon,
   CopyIcon,
   DownloadIcon,
   FolderIcon,
   GitBranchIcon,
+  GripVerticalIcon,
   ListFilterIcon,
   PencilIcon,
   PinIcon,
@@ -40,6 +43,7 @@ import { SettingsSidebarNav } from "./sidebar/SettingsSidebarNav";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import {
   groupThreadsByProject,
+  moveProject,
   partitionWorkingThreads,
 } from "./sidebar/sidebarGrouping";
 import { SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
@@ -95,6 +99,10 @@ export function ThreadSidebar() {
     "t3code:sidebar:collapsed-projects",
     {},
   );
+  const [manualProjectOrder, setManualProjectOrder] = useLocalStorage<string[]>(
+    "pi-web:sidebar:project-order", [],
+  );
+  const draggedProjectRef = useRef<string | null>(null);
   const [workingExpanded, setWorkingExpanded] = useLocalStorage<boolean>(
     "t3code:sidebar:working-expanded",
     true,
@@ -203,15 +211,21 @@ export function ThreadSidebar() {
     return groupThreadsByProject(
       remainingActiveThreads,
       settings.projectOrder,
-      projects,
+      [...manualProjectOrder, ...projects.filter((cwd) => !manualProjectOrder.includes(cwd))],
     );
   }, [
     projects,
+    manualProjectOrder,
     remainingActiveThreads,
     selectedProjectCwd,
     settings.projectGrouping,
     settings.projectOrder,
   ]);
+
+  const moveSidebarProject = (source: string, target: string) => {
+    const allProjects = [...new Set([...manualProjectOrder, ...projects, ...(projectGroups ?? []).map((group) => group.cwd)])];
+    setManualProjectOrder(moveProject(allProjects, source, target));
+  };
 
   const hasSearchQuery = searchQuery.trim().length > 0;
   const searchResults = useMemo(() => {
@@ -503,7 +517,28 @@ export function ThreadSidebar() {
                       : group.threads.filter((t) => t.id === activeThreadId);
                     return (
                       <div key={group.cwd} className="flex flex-col gap-px">
-                        <li className="group/project-header mx-0.5 flex h-7 list-none items-center justify-between gap-1">
+                        <li
+                          className="group/project-header mx-0.5 flex h-7 list-none items-center justify-between gap-1"
+                          draggable={settings.projectOrder === "manual"}
+                          onDragStart={(event) => {
+                            draggedProjectRef.current = group.cwd;
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", group.cwd);
+                          }}
+                          onDragEnd={() => { draggedProjectRef.current = null; }}
+                          onDragOver={(event) => {
+                            if (settings.projectOrder === "manual" && draggedProjectRef.current) event.preventDefault();
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            const source = draggedProjectRef.current;
+                            draggedProjectRef.current = null;
+                            if (source) moveSidebarProject(source, group.cwd);
+                          }}
+                        >
+                          {settings.projectOrder === "manual" && (
+                            <span draggable title={tr("拖动排序", "Drag to reorder")} className="cursor-grab text-sidebar-muted-foreground active:cursor-grabbing"><GripVerticalIcon className="size-3.5" /></span>
+                          )}
                           <div className="min-w-0 flex-1">
                             <CollapsibleSectionHeader
                               expanded={isExpanded}
@@ -528,6 +563,17 @@ export function ThreadSidebar() {
                               </span>
                             </CollapsibleSectionHeader>
                           </div>
+                          {settings.projectOrder === "manual" && projectGroups.length > 1 && (
+                            <div className="flex items-center opacity-0 group-hover/project-header:opacity-100 focus-within:opacity-100">
+                              {([-1, 1] as const).map((direction) => {
+                                const index = projectGroups.findIndex((item) => item.cwd === group.cwd);
+                                const target = projectGroups[index + direction];
+                                const label = direction === -1 ? tr(`上移 ${group.name}`, `Move ${group.name} up`) : tr(`下移 ${group.name}`, `Move ${group.name} down`);
+                                const Icon = direction === -1 ? ArrowUpIcon : ArrowDownIcon;
+                                return <button key={direction} type="button" disabled={!target} aria-label={label} title={label} className="rounded p-0.5 hover:bg-sidebar-row-hover disabled:opacity-30" onClick={() => { if (target) moveSidebarProject(group.cwd, target.cwd); }}><Icon className="size-3" /></button>;
+                              })}
+                            </div>
+                          )}
                           <button
                             type="button"
                             title={tr(

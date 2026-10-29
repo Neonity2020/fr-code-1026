@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ThreadId, ThreadSummary } from "@pi-web/protocol";
-import { groupThreadsByProject, partitionWorkingThreads } from "./sidebarGrouping.ts";
+import { groupThreadsByProject, moveProject, partitionWorkingThreads } from "./sidebarGrouping.ts";
 
 function makeThread(
   id: string,
@@ -20,6 +20,11 @@ function makeThread(
 }
 
 describe("sidebarGrouping", () => {
+  it("moves projects in either direction without changing the other projects", () => {
+    assert.deepEqual(moveProject(["a", "b", "c"], "a", "c"), ["b", "c", "a"]);
+    assert.deepEqual(moveProject(["a", "b", "c"], "c", "a"), ["c", "a", "b"]);
+    assert.deepEqual(moveProject(["a", "b"], "missing", "a"), ["a", "b"]);
+  });
   it("partitions running, unread, and woke threads when workingSectionEnabled is true", () => {
     const t1 = makeThread("1", "/repo/a", { status: "running" });
     const t2 = makeThread("2", "/repo/a", { status: "idle" });

@@ -6,6 +6,7 @@
  * - extension_ui_request(confirm) → approval_request，应答为 extension_ui_response
  * - agent_settled → 一轮结束，线程回 idle
  */
+import { randomBytes } from "node:crypto";
 import {
   firstLineTitle,
   type AttachmentItem,
@@ -768,7 +769,5 @@ function withToolResult(
 }
 
 function cryptoRandomId(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(8)))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return randomBytes(8).toString("hex");
 }
