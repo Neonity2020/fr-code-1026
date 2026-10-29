@@ -81,7 +81,7 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
   const [inlinePanelOpen, setInlinePanelOpen] = useState(true);
   const [changesOpen, setChangesOpen] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalPlacement, setTerminalPlacement] = useState<"bottom" | "right" | null>(null);
   const [outputRevision, setOutputRevision] = useState(0);
 
   // ⌘F 对话内查找状态
@@ -99,7 +99,7 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
   useEffect(() => {
     setOutputOpen(false);
     setChangesOpen(false);
-    setTerminalOpen(false);
+    setTerminalPlacement(null);
     setFindOpen(false);
     setFindQuery("");
     setFindMatchCount(0);
@@ -119,9 +119,9 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
         if (action === "open-terminal") {
           setOutputOpen(false);
           setChangesOpen(false);
-          setTerminalOpen(true);
+          setTerminalPlacement("bottom");
         } else if (action === "open-script-output") {
-          setTerminalOpen(false);
+          setTerminalPlacement(null);
           setOutputOpen(true);
         } else if (action === "open-find") {
           openFindBar();
@@ -157,14 +157,14 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
   });
 
   const showScriptOutput = () => {
-    setTerminalOpen(false);
+    setTerminalPlacement(null);
     setOutputOpen(true);
     setOutputRevision((value) => value + 1);
   };
 
   const showChanges = useCallback((open: boolean) => {
     setChangesOpen(open);
-    if (open) setTerminalOpen(false);
+    if (open) setTerminalPlacement((placement) => placement === "right" ? null : placement);
   }, []);
 
   const inlinePanel = canShowInlineThreadPanel(containerSize.width, containerSize.height);
@@ -283,10 +283,10 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
               cwd={summary.cwd}
               running={summary.status === "running"}
               inline={inlinePanel}
-              inlineOpen={inlinePanelOpen && !changesOpen && !terminalOpen}
-              onInlineOpenChange={(open) => { setInlinePanelOpen(open); if (open) { setChangesOpen(false); setTerminalOpen(false); } }}
+              inlineOpen={inlinePanelOpen && !changesOpen && terminalPlacement !== "right"}
+              onInlineOpenChange={(open) => { setInlinePanelOpen(open); if (open) { setChangesOpen(false); setTerminalPlacement((placement) => placement === "right" ? null : placement); } }}
               onShowScriptOutput={showScriptOutput}
-              onShowTerminal={() => { setOutputOpen(false); setChangesOpen(false); setTerminalOpen(true); }}
+              onShowTerminal={() => { setOutputOpen(false); setChangesOpen(false); setTerminalPlacement("right"); }}
               showFiles={changesOpen}
               onShowFilesChange={showChanges}
             />
@@ -297,13 +297,12 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
             disabled={!summary}
             aria-label={tr("切换终端", "Toggle terminal")}
             title={tr("打开终端", "Open terminal")}
-            aria-expanded={terminalOpen}
-            aria-pressed={terminalOpen}
-            className={terminalOpen ? "bg-accent" : undefined}
+            aria-expanded={terminalPlacement === "bottom"}
+            aria-pressed={terminalPlacement === "bottom"}
+            className={terminalPlacement === "bottom" ? "bg-accent" : undefined}
             onClick={() => {
               setOutputOpen(false);
-              setChangesOpen(false);
-              setTerminalOpen(!terminalOpen);
+              setTerminalPlacement((placement) => placement === "bottom" ? null : "bottom");
             }}
           >
             <PanelBottomIcon />
@@ -334,9 +333,9 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
       <div
         className="flex min-h-0 flex-1 flex-col"
         style={
-          (changesOpen || terminalOpen) && containerSize.width >= 1200
+          (changesOpen || terminalPlacement === "right") && containerSize.width >= 1200
             ? { paddingRight: "42rem" }
-            : inlinePanel && inlinePanelOpen && !changesOpen && !terminalOpen
+            : inlinePanel && inlinePanelOpen && !changesOpen && terminalPlacement !== "right"
             ? {
                 paddingRight:
                   "min(324px, max(0px, calc(var(--chat-content-max-width) + 648px - 100%)))",
@@ -362,6 +361,9 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
             </div>
           </>
         )}
+        {terminalPlacement === "bottom" && (
+          <TerminalDrawer key={threadId} threadId={threadId} placement="bottom" onClose={() => setTerminalPlacement(null)} onShowChanges={() => showChanges(true)} />
+        )}
       </div>
       {outputOpen && (
         <ScriptOutputDrawer
@@ -371,11 +373,11 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
           onClose={() => setOutputOpen(false)}
         />
       )}
-      {terminalOpen && (
+      {terminalPlacement === "right" && (
         <TerminalDrawer
           key={threadId}
           threadId={threadId}
-          onClose={() => setTerminalOpen(false)}
+          onClose={() => setTerminalPlacement(null)}
           onShowChanges={() => showChanges(true)}
         />
       )}
