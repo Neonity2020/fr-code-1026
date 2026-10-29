@@ -46,12 +46,12 @@ export function TerminalDrawer({ threadId, onClose, onShowChanges }: { threadId:
       } catch { /* ignore malformed messages */ }
     };
     socket.onclose = () => { setConnected(false); terminal.writeln(`\r\n[${tr("连接已断开", "Disconnected")}]`); };
-    socket.onerror = () => terminal.writeln(`\r\n[${tr("终端仅支持通过本机 HTTP 页面连接", "Terminal requires a local HTTP connection")}]`);
+    socket.onerror = () => terminal.writeln(`\r\n[${tr("终端连接失败", "Terminal connection failed")}]`);
     return () => { observer.disconnect(); input.dispose(); socket.close(); socketRef.current = null; terminal.dispose(); };
   }, [threadId, restart]);
 
   return <section aria-label={tr("终端", "Terminal")} className="absolute bottom-0 right-0 top-[var(--workspace-topbar-height)] z-30 flex w-[min(42rem,100%)] min-h-0 flex-col border-l bg-(--terminal-background) text-(--terminal-foreground) shadow-lg">
-    <div className="flex h-10 shrink-0 items-center gap-1 border-b px-3 text-xs"><button type="button" onClick={onShowChanges} className="rounded-md px-2 py-1 text-muted-foreground hover:bg-accent">{tr("变更", "Changes")}</button><span className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 font-medium" aria-current="page"><TerminalIcon className="size-3.5" />{tr("终端", "Terminal")}</span><span className="flex-1" />{exited ? <Button variant="ghost" size="xs" onClick={() => setRestart((value) => value + 1)}>{tr("重新打开", "Restart")}</Button> : <Button variant="ghost-muted" size="icon-xs" disabled={!connected} aria-label={tr("结束终端", "End terminal")} onClick={() => socketRef.current?.send(JSON.stringify({ type: "terminate" }))}><SquareIcon /></Button>}<Button variant="ghost-muted" size="icon-xs" onClick={onClose} aria-label={tr("关闭终端面板", "Close terminal panel")}><XIcon /></Button></div>
+    <div className="flex h-10 shrink-0 items-center gap-1 border-b px-3 text-xs"><button type="button" onClick={onShowChanges} className="rounded-md px-2 py-1 text-muted-foreground hover:bg-accent">{tr("变更", "Changes")}</button><span className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 font-medium" aria-current="page"><TerminalIcon className="size-3.5" />{tr("终端", "Terminal")}</span><span className="flex-1" />{exited || !connected ? <Button variant="ghost" size="xs" onClick={() => setRestart((value) => value + 1)}>{exited ? tr("重新打开", "Restart") : tr("重新连接", "Reconnect")}</Button> : <Button variant="ghost-muted" size="icon-xs" disabled={!connected} aria-label={tr("结束终端", "End terminal")} onClick={() => socketRef.current?.send(JSON.stringify({ type: "terminate" }))}><SquareIcon /></Button>}<Button variant="ghost-muted" size="icon-xs" onClick={onClose} aria-label={tr("关闭终端面板", "Close terminal panel")}><XIcon /></Button></div>
     <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden px-2 py-1" />
   </section>;
 }

@@ -682,6 +682,9 @@ export function SettingsView() {
               <ThemeLibrarySection
                 onAppearanceModeChange={(mode) => updateSetting("theme", mode)}
               />
+              <SettingsSection title={tr("自定义主题", "Custom themes")}>
+                <div className="p-3 sm:p-5"><ThemeSettings customOnly /></div>
+              </SettingsSection>
               <SettingsSection title={tr("外观与语言", "Appearance")}>
                 <SettingsRow
                   id="setting-appearance-language"

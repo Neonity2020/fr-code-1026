@@ -24,7 +24,7 @@ import { ThreadStore, type ThreadSubscriber } from "./threads.ts";
 import { countUntrackedLines, getFilePatch, parseGitStatus } from "./git-status.ts";
 import { checkoutRemoteBranch, commitChanges, createBranch, getPushTarget, localBranches, pushBranch, remoteBranches, switchBranch, syncRemote } from "./git-actions.ts";
 import { ProjectScripts } from "./project-scripts.ts";
-import { availableEditors, editorLaunch } from "./editors.ts";
+import { availableEditors, editorLaunch, validateWorkspaceDirectory } from "./editors.ts";
 import { Terminals } from "./terminals.ts";
 import { listProjectFiles } from "./project-files.ts";
 
@@ -595,7 +595,7 @@ const server = http.createServer((request, response) => {
       response.end("Unknown editor or unsupported platform.");
       return;
     }
-    void execFileAsync(launch.command, launch.args).then(() => {
+    void validateWorkspaceDirectory(thread.summary.cwd).then(() => execFileAsync(launch.command, launch.args)).then(() => {
       response.writeHead(204);
       response.end();
     }, (error: unknown) => {

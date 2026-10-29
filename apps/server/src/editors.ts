@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { stat } from "node:fs/promises";
 
 const execFileAsync = promisify(execFile);
 
@@ -37,4 +38,9 @@ export async function availableEditors(platform: NodeJS.Platform = process.platf
     } catch { return null; }
   }));
   return found.filter((editor): editor is { id: string; label: typeof editors[keyof typeof editors]["label"] } => editor !== null);
+}
+
+export async function validateWorkspaceDirectory(path: string): Promise<void> {
+  const info = await stat(path).catch(() => null);
+  if (!info?.isDirectory()) throw new Error("Workspace folder does not exist or is not a directory.");
 }

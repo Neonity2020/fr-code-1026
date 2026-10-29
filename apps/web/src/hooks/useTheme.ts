@@ -35,7 +35,7 @@ export type ThemeSnapshot = Readonly<{
 
 const STORAGE_KEY = "t3code:theme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
-export const DEFAULT_THEME_ID = "t3-chat";
+export const DEFAULT_THEME_ID = "default";
 
 const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
   theme: DEFAULT_THEME_ID,
@@ -130,7 +130,7 @@ function writeAppearanceModePreference(appearanceMode: ThemePreferenceMode): voi
 export function readThemePreference(): Theme {
   if (typeof window === "undefined") return DEFAULT_THEME_ID;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem("t3code:theme-preference:v1");
     if (raw !== null && isKnownThemePreference(raw)) {
       return canonicalThemePreference(raw);
     }
@@ -268,7 +268,7 @@ function handleStorageChange(e: StorageEvent) {
 
 let removeWindowListeners: (() => void) | null = null;
 
-function subscribe(listener: () => void): () => void {
+export function subscribeTheme(listener: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   listeners.push(listener);
 
@@ -361,7 +361,7 @@ export function refreshTheme({ preservePreview = false } = {}): void {
 }
 
 export function useRenderedAppearance(): ThemeAppearance {
-  const { resolvedTheme } = useSyncExternalStore(subscribe, getThemeSnapshot, () => DEFAULT_THEME_SNAPSHOT);
+  const { resolvedTheme } = useSyncExternalStore(subscribeTheme, getThemeSnapshot, () => DEFAULT_THEME_SNAPSHOT);
   const previewAppearance = useSyncExternalStore(
     subscribeToThemePreview,
     getThemePreviewAppearance,
@@ -371,7 +371,7 @@ export function useRenderedAppearance(): ThemeAppearance {
 }
 
 export function useTheme() {
-  const snapshot = useSyncExternalStore(subscribe, getThemeSnapshot, () => DEFAULT_THEME_SNAPSHOT);
+  const snapshot = useSyncExternalStore(subscribeTheme, getThemeSnapshot, () => DEFAULT_THEME_SNAPSHOT);
   const { theme, resolvedTheme } = snapshot;
 
   const setFollowSystem = (nextFollowSystem: boolean): boolean => {

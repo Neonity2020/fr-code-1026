@@ -1541,7 +1541,7 @@ export function resolveDesktopTheme(
 }
 
 export function isKnownThemePreference(theme: string): boolean {
-  if (theme === "light" || theme === "dark" || theme === "system") return true;
+  if (theme === "default" || theme === "light" || theme === "dark" || theme === "system") return true;
   return getThemeDefinition(theme) !== null;
 }
 

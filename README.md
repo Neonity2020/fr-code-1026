@@ -16,14 +16,14 @@
 
 ## 运行
 
-项目全面支持 **Bun** 构建与运行时（推荐），同时也保持与 Node / pnpm 兼容：
+项目支持使用 **Bun** 执行开发和构建命令（推荐），服务端通过 Node.js 运行以支持伪终端：
 
 ```bash
 # 1. 安装依赖（自动配置工作区并打入 @pierre/diffs 补丁）
 bun install
 
 # 2. 开发环境：
-# 终端 1 启动后端服务（端口 6115，Bun 原生监听 TypeScript 源码变更）
+# 终端 1 启动后端服务（端口 6115，Node 监听 TypeScript 源码变更，确保伪终端兼容）
 bun dev
 
 # 终端 2 启动前端热重载（端口 6116，Vite 自动反代 API 与 WebSocket）

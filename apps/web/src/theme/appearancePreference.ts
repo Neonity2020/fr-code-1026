@@ -5,23 +5,27 @@
  * 对齐 t3code 的 themeBoot / useTheme 行为。
  */
 import {
-  applyThemePalette,
   EMBER_THEME,
   getThemeColorsForMode,
   getThemeDefinition,
   GROVE_THEME,
   IRIS_THEME,
   OCEAN_THEME,
-  parseThemeHalves,
-  resolveThemeAppearance,
-  resolveThemeHalf,
   T3_CHAT_THEME,
   THEME_APPEARANCE_MODE_STORAGE_KEY,
-  THEME_HALVES_STORAGE_KEY,
   type ThemeAppearance,
   type ThemeDefinition,
-  type ThemeHalves,
 } from "./themePalette.ts";
+
+import {
+  readThemePreference as readStoredTheme,
+  readThemeHalves,
+  refreshTheme,
+  setAppearanceMode,
+  setTheme,
+  setThemeHalf,
+  subscribeTheme,
+} from "../hooks/useTheme";
 
 export type AppearanceMode = "system" | "light" | "dark";
 
@@ -38,8 +42,6 @@ export const BUILTIN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = [
   IRIS_THEME,
 ];
 
-const appearanceListeners = new Set<() => void>();
-
 function isAppearanceMode(value: unknown): value is AppearanceMode {
   return value === "system" || value === "light" || value === "dark";
 }
@@ -55,24 +57,7 @@ export function readAppearanceMode(): AppearanceMode {
 }
 
 export function readThemePreference(): string {
-  try {
-    const stored = window.localStorage.getItem(THEME_PREFERENCE_STORAGE_KEY);
-    if (stored && (stored === "default" || getThemeDefinition(stored) !== null)) {
-      return stored;
-    }
-  } catch {
-    // ignore
-  }
-  return DEFAULT_THEME_ID;
-}
-
-export function readThemeHalves(): ThemeHalves | null {
-  try {
-    const raw = window.localStorage.getItem(THEME_HALVES_STORAGE_KEY);
-    return parseThemeHalves(raw);
-  } catch {
-    return null;
-  }
+  return readStoredTheme();
 }
 
 /** 把偏好解析成实际外观：跟随系统时取系统配色。 */
@@ -90,111 +75,33 @@ export function systemPrefersDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-function syncDomTheme(
-  mode: AppearanceMode,
-  themeId: string,
-  halves: ThemeHalves | null,
-): "light" | "dark" {
-  const appearance = resolveThemeAppearance(
-    themeId,
-    systemPrefersDark(),
-    mode === "system",
-    mode,
-    halves,
-  );
-  if (typeof document !== "undefined") {
-    document.documentElement.classList.toggle("dark", appearance === "dark");
-    const effectiveTheme = resolveThemeHalf(themeId, halves, appearance);
-    applyThemePalette(effectiveTheme, appearance);
-  }
-  return appearance;
-}
-
-/**
- * 应用外观：写入存储、切换 `.dark` class、刷新调色板变量。
- * 返回实际生效的外观，供调用方展示。
- */
 export function applyAppearanceMode(mode: AppearanceMode): "light" | "dark" {
-  try {
-    window.localStorage.setItem(APPEARANCE_MODE_STORAGE_KEY, mode);
-  } catch {
-    // 存储不可用时仍然应用当前会话
-  }
-  const appearance = syncDomTheme(mode, readThemePreference(), readThemeHalves());
-  notifyAppearanceListeners();
-  return appearance;
+  setAppearanceMode(mode);
+  return resolveAppearance(mode, systemPrefersDark());
 }
 
-/**
- * 切换整套主题调色板（如 "default" | "t3-chat" | "grove" | "ocean" | "ember" | "iris"），
- * 并清空单边覆盖（对齐 t3code setTheme）。
- */
 export function applyThemePreference(themeId: string): void {
-  try {
-    window.localStorage.setItem(THEME_PREFERENCE_STORAGE_KEY, themeId);
-    window.localStorage.removeItem(THEME_HALVES_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-  syncDomTheme(readAppearanceMode(), themeId, null);
-  notifyAppearanceListeners();
+  setTheme(themeId);
 }
 
-/**
- * 为指定亮/暗模式单独设置主题半区（或同时切换模式），对齐 t3code setThemeHalf。
- */
 export function applyThemeHalf(
   appearance: ThemeAppearance,
   themeId: string,
   switchMode = true,
 ): void {
-  const currentTheme = readThemePreference();
-  const currentHalves = readThemeHalves() ?? {};
-  const otherAppearance: ThemeAppearance = appearance === "light" ? "dark" : "light";
-  const otherThemeId = currentHalves[otherAppearance] ?? currentTheme;
-
-  const nextHalves: { light?: string; dark?: string } = {
-    [appearance]: themeId,
-    [otherAppearance]: otherThemeId,
-  };
-
-  try {
-    if (themeId === otherThemeId) {
-      window.localStorage.setItem(THEME_PREFERENCE_STORAGE_KEY, themeId);
-      window.localStorage.removeItem(THEME_HALVES_STORAGE_KEY);
-    } else {
-      window.localStorage.setItem(THEME_PREFERENCE_STORAGE_KEY, themeId);
-      window.localStorage.setItem(THEME_HALVES_STORAGE_KEY, JSON.stringify(nextHalves));
-    }
-    if (switchMode) {
-      window.localStorage.setItem(APPEARANCE_MODE_STORAGE_KEY, appearance);
-    }
-  } catch {
-    // ignore
-  }
-
-  const mode = switchMode ? appearance : readAppearanceMode();
-  const halves = readThemeHalves();
-  syncDomTheme(mode, readThemePreference(), halves);
-  notifyAppearanceListeners();
+  setThemeHalf(appearance, themeId);
+  if (switchMode) setAppearanceMode(appearance);
 }
 
 export function resolveActiveThemeForAppearance(appearance: ThemeAppearance): string {
-  const themeId = readThemePreference();
-  const halves = readThemeHalves();
-  const candidate = halves?.[appearance] ?? themeId;
+  const candidate = readThemeHalves()?.[appearance] ?? readThemePreference();
   if (candidate === "default") return "default";
   const def = getThemeDefinition(candidate);
-  if (def && getThemeColorsForMode(def, appearance) !== null) {
-    return def.id;
-  }
-  return "default";
+  return def && getThemeColorsForMode(def, appearance) !== null ? def.id : "default";
 }
 
-/** 首帧与系统配色变化时调用：只重新解析，不写存储。 */
 export function refreshAppearance(): void {
-  syncDomTheme(readAppearanceMode(), readThemePreference(), readThemeHalves());
-  notifyAppearanceListeners();
+  refreshTheme();
 }
 
 /** system → light → dark → system 的循环（对齐 t3code appearance.cycle）。 */
@@ -204,11 +111,4 @@ export function cycleAppearanceMode(mode: AppearanceMode): AppearanceMode {
   return "system";
 }
 
-export function subscribeAppearanceMode(listener: () => void): () => void {
-  appearanceListeners.add(listener);
-  return () => appearanceListeners.delete(listener);
-}
-
-function notifyAppearanceListeners(): void {
-  for (const listener of appearanceListeners) listener();
-}
+export const subscribeAppearanceMode = subscribeTheme;

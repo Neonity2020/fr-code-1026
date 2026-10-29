@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { applyThemeHalf, applyThemePreference, readThemePreference, resolveActiveThemeForAppearance } from "./appearancePreference.ts";
+import { setTheme, readThemePreference as readHookTheme, setAppearanceMode } from "../hooks/useTheme.ts";
+import { applyAppearanceMode, readAppearanceMode, applyThemeHalf, applyThemePreference, readThemePreference, resolveActiveThemeForAppearance } from "./appearancePreference.ts";
 
 const values = new Map<string, string>();
 (globalThis as { window?: unknown }).window = {
@@ -22,4 +23,19 @@ test("默认黑白主题及单独选择的亮暗半区可恢复", () => {
   applyThemeHalf("dark", "default");
   assert.equal(resolveActiveThemeForAppearance("light"), "default");
   assert.equal(resolveActiveThemeForAppearance("dark"), "default");
+});
+
+
+test("主题入口共享状态并迁移旧偏好", () => {
+  values.clear();
+  values.set("t3code:theme-preference:v1", "ocean");
+  assert.equal(readHookTheme(), "ocean");
+  applyThemePreference("grove");
+  assert.equal(readHookTheme(), "grove");
+  setTheme("iris");
+  assert.equal(readThemePreference(), "iris");
+  applyAppearanceMode("dark");
+  assert.equal(readAppearanceMode(), "dark");
+  setAppearanceMode("light");
+  assert.equal(readAppearanceMode(), "light");
 });

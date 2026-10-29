@@ -8,6 +8,10 @@
       // 主题在首帧前应用，避免闪烁（对齐 t3code themeBoot 模式）
       (function () {
         try {
+          var settings;
+          try { settings = JSON.parse(localStorage.getItem("pi-web:settings:v1") || "{}"); } catch (e) { settings = {}; }
+          if (settings && settings.fontScale === "compact") document.documentElement.style.fontSize = "92%";
+          else if (settings && settings.fontScale === "comfortable") document.documentElement.style.fontSize = "108%";
           var mode = localStorage.getItem("t3code:theme-appearance-mode") || "system";
           var dark =
             mode === "dark" ||

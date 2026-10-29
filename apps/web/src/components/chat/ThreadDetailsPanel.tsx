@@ -209,7 +209,7 @@ export function ThreadDetailsPanel({ threadId, cwd, running, inline, inlineOpen,
           <div className="flex min-h-8 items-center gap-3 px-2" title={cwd}>
             <MonitorIcon className="size-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{status?.hostname ?? tr("本机", "Local")}</span>
-            <Button variant="ghost-muted" size="icon-xs" aria-label={tr("打开项目文件夹", "Open project folder")} onClick={() => void openProject("folder")}><FolderIcon /></Button>
+            <Button variant="ghost-muted" size="icon-xs" aria-label={tr("打开项目文件夹", "Open project folder")} title={tr("在文件管理器中打开工作区", "Open workspace in file manager")} onClick={() => void openProject("folder")}><FolderIcon /></Button>
           </div>
           <div className="flex items-center rounded-md hover:bg-accent" role="group" aria-label={tr("打开编辑器", "Open in editor")}>
             <button type="button" disabled={!activeEditor} className="flex min-h-8 min-w-0 flex-1 items-center gap-3 px-2 text-left disabled:opacity-50" onClick={() => { if (activeEditor) void openProject(activeEditor.id); }}><Code2Icon className="size-4 shrink-0 text-sky-600" /><span className="truncate">{activeEditor ? tr(`在 ${activeEditor.label} 中打开`, `Open in ${activeEditor.label}`) : editorLoading ? tr("正在检测编辑器…", "Detecting editors…") : tr("未检测到编辑器", "No editor found")}</span></button>

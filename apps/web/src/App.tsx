@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { ServerConfigResponse } from "@pi-web/protocol";
 import { transport, useAppStore, type SidebarUtilityPage } from "@pi-web/client-runtime";
-import { getLocalStorageItem, removeLocalStorageItem } from "./hooks/useLocalStorage";
+import { getLocalStorageItem, removeLocalStorageItem, useLocalStorage } from "./hooks/useLocalStorage";
 import { useI18n } from "./i18n";
 import { cn, isMacPlatform } from "./lib/utils";
 import { SidebarBrandWidthProbe } from "./components/sidebar/SidebarChrome";
@@ -26,7 +26,7 @@ import {
 } from "./components/threadSidebarWidth";
 import { ChatView } from "./components/chat/ChatView";
 import { CommandPalette } from "./components/command-palette/CommandPalette";
-import { SettingsView } from "./components/settings/SettingsView";
+import { DEFAULT_PI_SETTINGS, PI_SETTINGS_STORAGE_KEY, SettingsView, type PiSettingsState } from "./components/settings/SettingsView";
 import { Button } from "./components/ui/button";
 import {
   Sidebar,
@@ -177,6 +177,10 @@ function SidebarControl() {
 }
 
 export function App() {
+  const [settings] = useLocalStorage<PiSettingsState>(PI_SETTINGS_STORAGE_KEY, DEFAULT_PI_SETTINGS);
+  useEffect(() => {
+    document.documentElement.style.fontSize = settings.fontScale === "compact" ? "92%" : settings.fontScale === "comfortable" ? "108%" : "";
+  }, [settings.fontScale]);
   const activeThreadId = useAppStore((state) => state.activeThreadId);
   const setActiveThread = useAppStore((state) => state.setActiveThread);
   const activeUtilityPage = useAppStore((state) => state.activeUtilityPage);

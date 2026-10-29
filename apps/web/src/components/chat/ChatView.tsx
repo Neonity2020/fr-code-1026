@@ -12,6 +12,8 @@ import {
   ChevronDownIcon,
   CopyIcon,
   FolderIcon,
+  DownloadIcon,
+  GitBranchIcon,
   PencilIcon,
   PanelBottomIcon,
   PanelRightIcon,
@@ -33,6 +35,7 @@ import type { ThreadId, ThreadSummary, TurnItem } from "@pi-web/protocol";
 import { transport, useAppStore } from "@pi-web/client-runtime";
 import { useI18n } from "~/i18n";
 import { observeResize } from "~/lib/observeResize";
+import { downloadThreadAsJson, downloadThreadAsMarkdown } from "~/lib/threadExport";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { ProjectIcon } from "../ProjectMonogram";
 import { resolveSnoozePresets } from "../Sidebar.snooze";
@@ -206,8 +209,14 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
             "pl-[calc(var(--workspace-controls-left)+var(--workspace-titlebar-control-size)+0.75rem)]",
         )}
       >
-        <ProjectIcon projectName={projectName} className="size-3.5 shrink-0" />
-        <span className="text-muted-foreground text-xs">{projectName}</span>
+        <button type="button" className="text-muted-foreground flex items-center gap-1.5 text-xs hover:text-foreground" onClick={() => {
+          if (!summary) return;
+          useAppStore.getState().markNewThreadRequested();
+          transport.dispatch({ type: "thread.create", cwd: summary.cwd });
+        }} title={tr("在当前项目中新建线程", "New thread in this project")}>
+          <ProjectIcon projectName={projectName} className="size-3.5 shrink-0" />
+          <span>{projectName}</span>
+        </button>
         <span className="text-muted-foreground text-xs">/</span>
 
         {isRenamingTitle ? (
@@ -224,6 +233,7 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
                 commitHeaderRename();
               } else if (event.key === "Escape") {
                 event.preventDefault();
+                setDraftTitle(summary?.title ?? "");
                 setIsRenamingTitle(false);
               }
             }}
@@ -284,6 +294,7 @@ export function ChatView({ threadId }: { threadId: ThreadId }) {
           <Button
             variant="ghost-muted"
             size="icon-xs"
+            disabled={!summary}
             aria-label={tr("切换终端", "Toggle terminal")}
             title={tr("打开终端", "Open terminal")}
             aria-expanded={terminalOpen}
@@ -472,6 +483,25 @@ function HeaderThreadActionsMenu({
           <PencilIcon className="size-4" />
           <span>{tr("重命名线程", "Rename thread")}</span>
         </MenuItem>
+        <MenuItem onClick={() => {
+          useAppStore.getState().markNewThreadRequested();
+          transport.dispatch({ type: "thread.fork", sourceThreadId: summary.id });
+        }}>
+          <GitBranchIcon className="size-4" />
+          <span>{tr("分叉线程", "Fork thread")}</span>
+        </MenuItem>
+        {(["markdown", "json"] as const).map((format) => (
+          <MenuItem key={format} onClick={() => {
+            const items = useAppStore.getState().byThread[summary.id]?.items ?? [];
+            if (items.length === 0) {
+              window.open(`/api/thread/export?threadId=${encodeURIComponent(summary.id)}&format=${format}`, "_blank");
+            } else if (format === "markdown") downloadThreadAsMarkdown(summary, items);
+            else downloadThreadAsJson(summary, items);
+          }}>
+            <DownloadIcon className="size-4" />
+            <span>{format === "markdown" ? tr("导出为 Markdown", "Export as Markdown") : tr("导出为 JSON", "Export as JSON")}</span>
+          </MenuItem>
+        ))}
         <MenuItem onClick={() => void navigator.clipboard?.writeText(summary.cwd)}>
           <FolderIcon className="size-4" />
           <span>{tr("复制工作区路径", "Copy working directory")}</span>

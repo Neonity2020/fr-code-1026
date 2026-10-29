@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts",
+    "dev": "node --import tsx --watch src/index.ts",
+    "start": "node --import tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -68,7 +68,7 @@ const THEME_DESCRIPTIONS: Record<string, { zh: string; en: string }> = {
   },
 };
 
-export function ThemeSettings() {
+export function ThemeSettings({ customOnly = false }: { customOnly?: boolean }) {
   const { tr, locale } = useI18n();
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -90,14 +90,8 @@ export function ThemeSettings() {
   // Determine active modes for a given theme
   const getActiveModesFor = (themeId: string): ThemeMode[] => {
     const modes: ThemeMode[] = [];
-    if (themeHalves) {
-      if (themeHalves.light === themeId) modes.push("light");
-      if (themeHalves.dark === themeId) modes.push("dark");
-      return modes;
-    }
-    if (theme === themeId) {
-      modes.push("light", "dark");
-    }
+    if ((themeHalves?.light ?? theme) === themeId) modes.push("light");
+    if ((themeHalves?.dark ?? theme) === themeId) modes.push("dark");
     return modes;
   };
 
@@ -161,14 +155,14 @@ export function ThemeSettings() {
 
   const handleResetToDefaults = () => {
     clearThemeHalves();
-    setTheme("t3-chat");
+    setTheme("default");
     setAppearanceMode("system");
   };
 
   return (
     <div className="flex flex-col gap-8">
       {/* 1. 外观模式 (Appearance Mode) */}
-      <div className="flex flex-col gap-3">
+      {!customOnly && <div className="flex flex-col gap-3">
         <div>
           <h4 className="text-sm font-medium text-foreground">
             {tr("明暗外观", "Appearance Mode")}
@@ -209,20 +203,22 @@ export function ThemeSettings() {
             );
           })}
         </div>
-      </div>
+      </div>}
 
       {/* 2. 主题调色板选择 (Theme Palettes) */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div>
             <h4 className="text-sm font-medium text-foreground">
-              {tr("主题调色板", "Theme Palettes")}
+              {customOnly ? tr("管理导入的主题", "Manage imported themes") : tr("主题调色板", "Theme Palettes")}
             </h4>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {tr(
-                "点击主题卡片一键全局应用；点击太阳 / 月亮图标可单独设定浅色或深色半套搭配。",
-                "Click a card to apply globally. Click the Sun or Moon circle to assign it specifically to light or dark mode.",
-              )}
+              {customOnly
+                ? tr("导入、导出或删除自定义主题。", "Import, export, or remove custom themes.")
+                : tr(
+                    "点击主题卡片一键全局应用；点击太阳 / 月亮图标可单独设定浅色或深色半套搭配。",
+                    "Click a card to apply globally. Click the Sun or Moon circle to assign it specifically to light or dark mode.",
+                  )}
             </p>
           </div>
 
@@ -264,7 +260,7 @@ export function ThemeSettings() {
 
         {/* 主题卡片网格 */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {BUILT_IN_THEME_DEFINITIONS.map((def) => {
+          {!customOnly && BUILT_IN_THEME_DEFINITIONS.map((def) => {
             const cardDef = getThemeCardDefinition(def);
             const activeModes = getActiveModesFor(def.id);
             const isFullActive = activeModes.includes("light") && activeModes.includes("dark");
